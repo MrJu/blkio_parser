@@ -67,29 +67,31 @@ struct io {
 	} account;
 };
 
+struct group {
+	char *name;
+	struct {
+		unsigned long long q2q_acc_origin, q2q_max_origin,
+				q2q_avg_origin, q2q_min_origin, q2q_iter_origin;
+		unsigned long long q2q_acc, q2q_max, q2q_avg, q2q_min, q2q_iter;
+		unsigned long long q2g_acc, q2g_max, q2g_avg, q2g_min;
+		unsigned long long q2c_acc, q2c_max, q2c_avg, q2c_min;
+		unsigned long long d2c_acc, d2c_max, d2c_avg, d2c_min;
+		unsigned long long nr_sector_max, nr_sector_avg, nr_sector_min;
+		unsigned long long nr_queue_origin, nr_queue_sector_acc_origin;
+		unsigned long long nr_queue, nr_queue_sector_acc;
+		unsigned long long nr_split, nr_split_sector_acc;
+		unsigned long long nr_merge, nr_merge_sector_acc;
+		unsigned long long nr_complete, nr_complete_sector_acc;
+		unsigned long long nr_q2q_origin, nr_q2q, nr_q2g, nr_q2c, nr_d2c;
+	} summary;
+};
+
 struct device {
 	struct list_head entry;
 	struct list_head io;
 	unsigned int major;
 	unsigned int minor;
-
-	struct summary {
-		struct domain {
-			unsigned long long q2q_acc_origin, q2q_max_origin,
-			       		q2q_avg_origin, q2q_min_origin, q2q_iter_origin;
-			unsigned long long q2q_acc, q2q_max, q2q_avg, q2q_min, q2q_iter;
-			unsigned long long q2g_acc, q2g_max, q2g_avg, q2g_min;
-			unsigned long long q2c_acc, q2c_max, q2c_avg, q2c_min;
-			unsigned long long d2c_acc, d2c_max, d2c_avg, d2c_min;
-			unsigned long long nr_sector_max, nr_sector_avg, nr_sector_min;
-			unsigned long long nr_queue_origin, nr_queue_sector_acc_origin;
-			unsigned long long nr_queue, nr_queue_sector_acc;
-			unsigned long long nr_split, nr_split_sector_acc;
-			unsigned long long nr_merge, nr_merge_sector_acc;
-			unsigned long long nr_complete, nr_complete_sector_acc;
-			unsigned long long nr_q2q_origin, nr_q2q, nr_q2g, nr_q2c, nr_d2c;
-		} rw, r, w;
-	} summary;
+	struct group r, w, rw;
 };
 
 struct pattern patterns[] = {
@@ -282,13 +284,18 @@ struct device *search_for_device(struct event *e, struct list_head *head)
 	}
 
 	dev = malloc(sizeof(*dev));
-	if (!dev)
+	if (!dev) {
+		printf("dev malloc failed");
 		return NULL;
+	}
 
 	memset(dev, 0, sizeof(*dev));
 
 	dev->major = e->major;
 	dev->minor = e->minor;
+	dev->r.name = "r";
+	dev->w.name = "w";
+	dev->rw.name = "rw";
 	INIT_LIST_HEAD(&dev->entry);
 	INIT_LIST_HEAD(&dev->io);
 
@@ -541,7 +548,7 @@ int is_marked(struct io *io, char mark)
 	return !!(io->account.mark & (1 << (mark - 'A')));
 }
 
-void update_summary_q2q_origin(struct device *dev, struct io *io)
+void update_summary_q2q_origin(struct group *group, struct io *io)
 {
 	double q2q;
 
@@ -549,39 +556,39 @@ void update_summary_q2q_origin(struct device *dev, struct io *io)
 		return;
 
 	/* only the 1st queue */ 
-	if (!dev->summary.rw.q2q_iter_origin) {
+	if (!group->summary.q2q_iter_origin) {
 		/* set q2q_min the time of 1st queue for initializaton */
-		dev->summary.rw.q2q_min_origin = io->account.time.q;
+		group->summary.q2q_min_origin = io->account.time.q;
 		/* save the the time of 1st queue for the next cycle */
-		dev->summary.rw.q2q_iter_origin = io->account.time.q;
+		group->summary.q2q_iter_origin = io->account.time.q;
 		/* do nothing else for the 1st queue */
-		printf("io->account.time.q:%llu dev->summary.rw.q2q_iter_origin:%llu\n", io->account.time.q, dev->summary.rw.q2q_iter_origin);
+		printf("io->account.time.q:%llu group->summary.q2q_iter_origin:%llu\n", io->account.time.q, group->summary.q2q_iter_origin);
 		return;
 	}
 
 	/* obtain the diff between last and this queue */
-	q2q = io->account.time.q - dev->summary.rw.q2q_iter_origin;
-	if (io->account.time.q < dev->summary.rw.q2q_iter_origin)
-		printf("io->account.time.q:%.6lf dev->summary.rw.q2q_iter_origin:%.6lf q2q:%.6lf\n", io->account.time.q / 1000000.0, dev->summary.rw.q2q_iter_origin / 1000000.0, q2q / 1000000.0);
+	q2q = io->account.time.q - group->summary.q2q_iter_origin;
+	if (io->account.time.q < group->summary.q2q_iter_origin)
+		printf("io->account.time.q:%.6lf group->summary.q2q_iter_origin:%.6lf q2q:%.6lf\n", io->account.time.q / 1000000.0, group->summary.q2q_iter_origin / 1000000.0, q2q / 1000000.0);
 	/* update q2q_iter for the next cycle */
-	dev->summary.rw.q2q_iter_origin = io->account.time.q;
+	group->summary.q2q_iter_origin = io->account.time.q;
 
-	dev->summary.rw.nr_q2q_origin++;
-	dev->summary.rw.q2q_acc_origin += q2q;
+	group->summary.nr_q2q_origin++;
+	group->summary.q2q_acc_origin += q2q;
 
-	if (q2q > dev->summary.rw.q2q_max_origin)
-		dev->summary.rw.q2q_max_origin = q2q;
+	if (q2q > group->summary.q2q_max_origin)
+		group->summary.q2q_max_origin = q2q;
 
-	if (q2q < dev->summary.rw.q2q_min_origin)
-		dev->summary.rw.q2q_min_origin = q2q;
+	if (q2q < group->summary.q2q_min_origin)
+		group->summary.q2q_min_origin = q2q;
 
-	dev->summary.rw.q2q_avg_origin
-		= dev->summary.rw.q2q_acc_origin / dev->summary.rw.nr_q2q_origin;
+	group->summary.q2q_avg_origin
+		= group->summary.q2q_acc_origin / group->summary.nr_q2q_origin;
 }
 
 
 
-void update_summary_q2q(struct device *dev, struct io *io)
+void update_summary_q2q(struct group *group, struct io *io)
 {
 	double q2q;
 
@@ -589,37 +596,37 @@ void update_summary_q2q(struct device *dev, struct io *io)
 		return;
 
 	/* only the 1st queue */ 
-	if (!dev->summary.rw.q2q_iter) {
+	if (!group->summary.q2q_iter) {
 		/* set q2q_min the time of 1st queue for initializaton */
-		dev->summary.rw.q2q_min = io->account.time.q;
+		group->summary.q2q_min = io->account.time.q;
 		/* save the the time of 1st queue for the next cycle */
-		dev->summary.rw.q2q_iter = io->account.time.q;
+		group->summary.q2q_iter = io->account.time.q;
 		/* do nothing else for the 1st queue */
-		printf("io->account.time.q:%llu dev->summary.rw.q2q_iter:%llu\n", io->account.time.q, dev->summary.rw.q2q_iter);
+		printf("io->account.time.q:%llu group->summary.q2q_iter:%llu\n", io->account.time.q, group->summary.q2q_iter);
 		return;
 	}
 
 	/* obtain the diff between last and this queue */
-	q2q = io->account.time.q - dev->summary.rw.q2q_iter;
-	if (io->account.time.q < dev->summary.rw.q2q_iter)
-		printf("io->account.time.q:%.6lf dev->summary.rw.q2q_iter:%.6lf q2q:%.6lf\n", io->account.time.q / 1000000.0, dev->summary.rw.q2q_iter / 1000000.0, q2q / 1000000.0);
+	q2q = io->account.time.q - group->summary.q2q_iter;
+	if (io->account.time.q < group->summary.q2q_iter)
+		printf("io->account.time.q:%.6lf group->summary.q2q_iter:%.6lf q2q:%.6lf\n", io->account.time.q / 1000000.0, group->summary.q2q_iter / 1000000.0, q2q / 1000000.0);
 	/* update q2q_iter for the next cycle */
-	dev->summary.rw.q2q_iter = io->account.time.q;
+	group->summary.q2q_iter = io->account.time.q;
 
-	dev->summary.rw.nr_q2q++;
-	dev->summary.rw.q2q_acc += q2q;
+	group->summary.nr_q2q++;
+	group->summary.q2q_acc += q2q;
 
-	if (q2q > dev->summary.rw.q2q_max)
-		dev->summary.rw.q2q_max = q2q;
+	if (q2q > group->summary.q2q_max)
+		group->summary.q2q_max = q2q;
 
-	if (q2q < dev->summary.rw.q2q_min)
-		dev->summary.rw.q2q_min = q2q;
+	if (q2q < group->summary.q2q_min)
+		group->summary.q2q_min = q2q;
 
-	dev->summary.rw.q2q_avg
-		= dev->summary.rw.q2q_acc / dev->summary.rw.nr_q2q;
+	group->summary.q2q_avg
+		= group->summary.q2q_acc / group->summary.nr_q2q;
 }
 
-void update_summary_q2g(struct device *dev, struct io *io)
+void update_summary_q2g(struct group *group, struct io *io)
 {
 	double q2g;
 
@@ -629,23 +636,23 @@ void update_summary_q2g(struct device *dev, struct io *io)
 	q2g = io->account.time.g - io->account.time.q;
 
 	/* for the first time */
-	if (!dev->summary.rw.nr_q2g)
-		dev->summary.rw.q2g_min = q2g;
+	if (!group->summary.nr_q2g)
+		group->summary.q2g_min = q2g;
 
-	dev->summary.rw.nr_q2g++;
-	dev->summary.rw.q2g_acc += q2g;
+	group->summary.nr_q2g++;
+	group->summary.q2g_acc += q2g;
 
-	if (q2g > dev->summary.rw.q2g_max)
-		dev->summary.rw.q2g_max = q2g;
+	if (q2g > group->summary.q2g_max)
+		group->summary.q2g_max = q2g;
 
-	if (q2g < dev->summary.rw.q2g_min)
-		dev->summary.rw.q2g_min = q2g;
+	if (q2g < group->summary.q2g_min)
+		group->summary.q2g_min = q2g;
 
-	dev->summary.rw.q2g_avg
-		= dev->summary.rw.q2g_acc / dev->summary.rw.nr_q2g;
+	group->summary.q2g_avg
+		= group->summary.q2g_acc / group->summary.nr_q2g;
 }
 
-void update_summary_q2c(struct device *dev, struct io *io)
+void update_summary_q2c(struct group *group, struct io *io)
 {
 	double q2c;
 
@@ -655,23 +662,23 @@ void update_summary_q2c(struct device *dev, struct io *io)
 	q2c = io->account.time.c - io->account.time.q;
 
 	/* for the first time */
-	if (!dev->summary.rw.nr_q2c)
-		dev->summary.rw.q2c_min = q2c;
+	if (!group->summary.nr_q2c)
+		group->summary.q2c_min = q2c;
 
-	dev->summary.rw.nr_q2c++;
-	dev->summary.rw.q2c_acc += q2c;
+	group->summary.nr_q2c++;
+	group->summary.q2c_acc += q2c;
 
-	if (q2c > dev->summary.rw.q2c_max)
-		dev->summary.rw.q2c_max = q2c;
+	if (q2c > group->summary.q2c_max)
+		group->summary.q2c_max = q2c;
 
-	if (q2c < dev->summary.rw.q2c_min)
-		dev->summary.rw.q2c_min = q2c;
+	if (q2c < group->summary.q2c_min)
+		group->summary.q2c_min = q2c;
 
-	dev->summary.rw.q2c_avg
-		= dev->summary.rw.q2c_acc / dev->summary.rw.nr_q2c;
+	group->summary.q2c_avg
+		= group->summary.q2c_acc / group->summary.nr_q2c;
 }
 
-void update_summary_d2c(struct device *dev, struct io *io)
+void update_summary_d2c(struct group *group, struct io *io)
 {
 	double d2c;
 
@@ -681,154 +688,103 @@ void update_summary_d2c(struct device *dev, struct io *io)
 	d2c = io->account.time.c - io->account.time.d;
 
 	/* for the first time */
-	if (!dev->summary.rw.nr_d2c)
-		dev->summary.rw.d2c_min = d2c;
+	if (!group->summary.nr_d2c)
+		group->summary.d2c_min = d2c;
 
-	dev->summary.rw.nr_d2c++;
-	dev->summary.rw.d2c_acc += d2c;
+	group->summary.nr_d2c++;
+	group->summary.d2c_acc += d2c;
 
-	if (d2c > dev->summary.rw.d2c_max)
-		dev->summary.rw.d2c_max = d2c;
+	if (d2c > group->summary.d2c_max)
+		group->summary.d2c_max = d2c;
 
-	if (d2c < dev->summary.rw.d2c_min)
-		dev->summary.rw.d2c_min = d2c;
+	if (d2c < group->summary.d2c_min)
+		group->summary.d2c_min = d2c;
 
-	dev->summary.rw.d2c_avg
-		= dev->summary.rw.d2c_acc / dev->summary.rw.nr_d2c;
+	group->summary.d2c_avg
+		= group->summary.d2c_acc / group->summary.nr_d2c;
 }
 
-void update_summary_queue_origin(struct device *dev, struct io *io)
+void update_summary_queue_origin(struct group *group, struct io *io)
 {
 	if (!is_marked(io, 'Q'))
 		return;
 
-	dev->summary.rw.nr_queue_origin++;
-	dev->summary.rw.nr_queue_sector_acc_origin += io->account.nr_sector_origin;
+	group->summary.nr_queue_origin++;
+	group->summary.nr_queue_sector_acc_origin += io->account.nr_sector_origin;
 }
 
-void update_summary_queue(struct device *dev, struct io *io)
+void update_summary_queue(struct group *group, struct io *io)
 {
 	if ((!is_marked(io, 'Q') && !is_marked(io, 'S')))
 		return;
 
 	/* for the first time */
-	if (!dev->summary.rw.nr_queue)
-		dev->summary.rw.nr_sector_min = io->account.nr_sector;
+	if (!group->summary.nr_queue)
+		group->summary.nr_sector_min = io->account.nr_sector;
 
-	dev->summary.rw.nr_queue++;
-	dev->summary.rw.nr_queue_sector_acc += io->account.nr_sector;
+	group->summary.nr_queue++;
+	group->summary.nr_queue_sector_acc += io->account.nr_sector;
 
-	if (io->account.nr_sector > dev->summary.rw.nr_sector_max)
-		dev->summary.rw.nr_sector_max = io->account.nr_sector;
+	if (io->account.nr_sector > group->summary.nr_sector_max)
+		group->summary.nr_sector_max = io->account.nr_sector;
 
-	if (io->account.nr_sector < dev->summary.rw.nr_sector_min)
-		dev->summary.rw.nr_sector_min = io->account.nr_sector;
+	if (io->account.nr_sector < group->summary.nr_sector_min)
+		group->summary.nr_sector_min = io->account.nr_sector;
 
-	dev->summary.rw.nr_sector_avg
-		= dev->summary.rw.nr_queue_sector_acc / dev->summary.rw.nr_queue;
+	group->summary.nr_sector_avg
+		= group->summary.nr_queue_sector_acc / group->summary.nr_queue;
 }
 
-void update_summary_split(struct device *dev, struct io *io, struct domain *d)
+void update_summary_split(struct group *group, struct io *io)
 {
 	if ((!is_marked(io, 'S')))
 		return;
 
-	dev->summary.rw.nr_split++;
-	dev->summary.rw.nr_split_sector_acc += io->account.nr_sector;
+	group->summary.nr_split++;
+	group->summary.nr_split_sector_acc += io->account.nr_sector;
 }
 
-void update_summary_merge(struct device *dev, struct io *io)
+void update_summary_merge(struct group *group, struct io *io)
 {
 	if ((!is_marked(io, 'M')))
 		return;
 
-	dev->summary.rw.nr_merge++;
-	dev->summary.rw.nr_merge_sector_acc += io->account.nr_sector;
+	group->summary.nr_merge++;
+	group->summary.nr_merge_sector_acc += io->account.nr_sector;
 }
 
-void update_summary_complete(struct device *dev, struct io *io)
+void update_summary_complete(struct group *group, struct io *io)
 {
 	if ((!is_marked(io, 'C')))
 		return;
 
-	dev->summary.rw.nr_complete++;
-	dev->summary.rw.nr_complete_sector_acc += io->account.nr_sector;
+	group->summary.nr_complete++;
+	group->summary.nr_complete_sector_acc += io->account.nr_sector;
 }
 
-void update_rw_summary(struct device *dev, struct io *io)
+#define update_summary(dev, grp, io) \
+	__update_summary(&(dev->grp), io)
+
+void __update_summary(struct group *grp, struct io *io)
 {
-/*
-struct io {
-	struct list_head entry;
-	struct list_head event;
-	struct {
-		int rw;
-		int mark;
-		int sector;
-		int nr_sector;
-		int nr_sector_origin;
-		struct {
-			double q;
-			double g;
-			double m;
-			double i;
-			double d;
-			double c;
-		} time;
-	} account;
-};
-
-struct device {
-	struct list_head entry;
-	struct list_head io;
-	int major;
-	int minor;
-
-	struct {
-		struct {
-			double q2q_acc, q2q_max, q2q_avg, q2q_min;
-			double q2g_acc, q2g_max, q2g_avg, q2g_min;
-			double q2c_acc, q2c_max, q2c_avg, q2c_min;
-			double d2c_acc, d2c_max, d2c_avg, d2c_min;
-
-			int nr_sector_max, nr_sector_avg, nr_sector_min;
-			int nr_queue_origin, nr_queue_sector_acc_origin;
-			int nr_queue, nr_queue_sector_acc;
-			int nr_split, nr_split_sector_acc;
-			int nr_merge, nr_merge_sector_acc;
-			int nr_complete, nr_complete_sector_acc;
-			int nr_q2q, nr_q2g, nr_q2c, nr_d2c;
-		} rw, r, w;
-	} summary;
-};
- */
-
-	if (!io->account.rw)
+	if (!strcmp(grp->name, "r") && !(io->account.rw & (1 << 0)))
+		return;
+	else if (!strcmp(grp->name, "w") && !(io->account.rw & (1 << 1)))
+		return;
+	else if (!strcmp(grp->name, "rw") && !io->account.rw)
 		return;
 
-	update_summary_queue_origin(dev, io);
-	update_summary_queue(dev, io);
-	update_summary_split(dev, io, NULL);
-	update_summary_merge(dev, io);
-	update_summary_complete(dev, io);
+	update_summary_queue_origin(grp, io);
+	update_summary_queue(grp, io);
+	update_summary_split(grp, io);
+	update_summary_merge(grp, io);
+	update_summary_complete(grp, io);
 
-	update_summary_q2q_origin(dev, io);
-	update_summary_q2q(dev, io);
-	update_summary_q2g(dev, io);
-	update_summary_q2c(dev, io);
-	update_summary_d2c(dev, io);
-}
-
-__attribute__((unused))
-void update_r_summary(struct device *dev, struct io *io)
-{
-
-}
-
-__attribute__((unused))
-void update_w_summary(struct device *dev, struct io *io)
-{
-
+	update_summary_q2q_origin(grp, io);
+	update_summary_q2q(grp, io);
+	update_summary_q2g(grp, io);
+	update_summary_q2c(grp, io);
+	update_summary_d2c(grp, io);
 }
 
 static int compare(void *priv, const struct list_head *a, const struct list_head *b) {
@@ -846,9 +802,10 @@ void process_post(void)
 	list_for_each_entry(dev, &device_list, entry) {
 		list_sort(NULL, &dev->io, compare);
 		list_for_each_entry(io, &dev->io, entry) {
-			update_rw_summary(dev, io);
-			update_r_summary(dev, io);
-			update_w_summary(dev, io);
+
+			update_summary(dev, r, io);
+			update_summary(dev, w, io);
+			update_summary(dev, rw, io);
 		}
 	}
 
@@ -892,44 +849,202 @@ void process_post(void)
 			%d,%d summary.rw.nr_sector_max:                      %llu\n \
 			%d,%d summary.rw.nr_sector_min:                      %llu\n \
 			%d,%d summary.rw.nr_sector_avg:                      %llu\n",
-			dev->major, dev->minor, dev->summary.rw.q2q_acc_origin / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.q2q_max_origin / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.q2q_min_origin / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.q2q_avg_origin / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.nr_q2q_origin,
-			dev->major, dev->minor, dev->summary.rw.q2q_acc / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.q2q_max / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.q2q_min / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.q2q_avg / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.nr_q2q,
-			dev->major, dev->minor, dev->summary.rw.q2g_acc / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.q2g_max / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.q2g_min / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.q2g_avg / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.nr_q2g,
-			dev->major, dev->minor, dev->summary.rw.q2c_acc / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.q2c_max / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.q2c_min / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.q2c_avg / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.nr_q2c,
-			dev->major, dev->minor, dev->summary.rw.d2c_acc / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.d2c_max / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.d2c_min / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.d2c_avg / 1000000.0,
-			dev->major, dev->minor, dev->summary.rw.nr_d2c,
-			dev->major, dev->minor, dev->summary.rw.nr_queue_origin,
-			dev->major, dev->minor, dev->summary.rw.nr_queue_sector_acc_origin,
-			dev->major, dev->minor, dev->summary.rw.nr_queue,
-			dev->major, dev->minor, dev->summary.rw.nr_queue_sector_acc,
-			dev->major, dev->minor, dev->summary.rw.nr_split,
-			dev->major, dev->minor, dev->summary.rw.nr_split_sector_acc,
-			dev->major, dev->minor, dev->summary.rw.nr_merge,
-			dev->major, dev->minor, dev->summary.rw.nr_merge_sector_acc,
-			dev->major, dev->minor, dev->summary.rw.nr_complete,
-			dev->major, dev->minor, dev->summary.rw.nr_complete_sector_acc,
-			dev->major, dev->minor, dev->summary.rw.nr_sector_max,
-			dev->major, dev->minor, dev->summary.rw.nr_sector_min,
-			dev->major, dev->minor, dev->summary.rw.nr_sector_avg
+			dev->major, dev->minor, dev->rw.summary.q2q_acc_origin / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.q2q_max_origin / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.q2q_min_origin / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.q2q_avg_origin / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.nr_q2q_origin,
+			dev->major, dev->minor, dev->rw.summary.q2q_acc / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.q2q_max / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.q2q_min / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.q2q_avg / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.nr_q2q,
+			dev->major, dev->minor, dev->rw.summary.q2g_acc / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.q2g_max / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.q2g_min / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.q2g_avg / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.nr_q2g,
+			dev->major, dev->minor, dev->rw.summary.q2c_acc / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.q2c_max / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.q2c_min / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.q2c_avg / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.nr_q2c,
+			dev->major, dev->minor, dev->rw.summary.d2c_acc / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.d2c_max / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.d2c_min / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.d2c_avg / 1000000.0,
+			dev->major, dev->minor, dev->rw.summary.nr_d2c,
+			dev->major, dev->minor, dev->rw.summary.nr_queue_origin,
+			dev->major, dev->minor, dev->rw.summary.nr_queue_sector_acc_origin,
+			dev->major, dev->minor, dev->rw.summary.nr_queue,
+			dev->major, dev->minor, dev->rw.summary.nr_queue_sector_acc,
+			dev->major, dev->minor, dev->rw.summary.nr_split,
+			dev->major, dev->minor, dev->rw.summary.nr_split_sector_acc,
+			dev->major, dev->minor, dev->rw.summary.nr_merge,
+			dev->major, dev->minor, dev->rw.summary.nr_merge_sector_acc,
+			dev->major, dev->minor, dev->rw.summary.nr_complete,
+			dev->major, dev->minor, dev->rw.summary.nr_complete_sector_acc,
+			dev->major, dev->minor, dev->rw.summary.nr_sector_max,
+			dev->major, dev->minor, dev->rw.summary.nr_sector_min,
+			dev->major, dev->minor, dev->rw.summary.nr_sector_avg
+		);
+
+		printf(" \
+			%d,%d summary.r.q2q_acc_origin:                     %.6lf\n \
+			%d,%d summary.r.q2q_max_origin:                     %.6lf\n \
+			%d,%d summary.r.q2q_min_origin:                     %.6lf\n \
+			%d,%d summary.r.q2q_avg_origin:                     %.6lf\n \
+			%d,%d summary.r.nr_q2q_origin:                      %llu\n \
+			%d,%d summary.r.q2q_acc:                            %.6lf\n \
+			%d,%d summary.r.q2q_max:                            %.6lf\n \
+			%d,%d summary.r.q2q_min:                            %.6lf\n \
+			%d,%d summary.r.q2q_avg:                            %.6lf\n \
+			%d,%d summary.r.nr_q2q:                             %llu\n \
+			%d,%d summary.r.q2g_acc:                            %.6lf\n \
+			%d,%d summary.r.q2g_max:                            %.6lf\n \
+			%d,%d summary.r.q2g_min:                            %.6lf\n \
+			%d,%d summary.r.q2g_avg:                            %.6lf\n \
+			%d,%d summary.r.nr_q2g:                             %llu\n \
+			%d,%d summary.r.q2c_acc:                            %.6lf\n \
+			%d,%d summary.r.q2c_max:                            %.6lf\n \
+			%d,%d summary.r.q2c_min:                            %.6lf\n \
+			%d,%d summary.r.q2c_avg:                            %.6lf\n \
+			%d,%d summary.r.nr_q2c:                             %llu\n \
+			%d,%d summary.r.d2c_acc:                            %.6lf\n \
+			%d,%d summary.r.d2c_max:                            %.6lf\n \
+			%d,%d summary.r.d2c_min:                            %.6lf\n \
+			%d,%d summary.r.d2c_avg:                            %.6lf\n \
+			%d,%d summary.r.nr_d2c:                             %llu\n \
+			%d,%d summary.r.nr_queue_origin:                    %llu\n \
+			%d,%d summary.r.nr_queue_sector_acc_origin:         %llu\n \
+			%d,%d summary.r.nr_queue:                           %llu\n \
+			%d,%d summary.r.nr_queue_sector_acc:                %llu\n \
+			%d,%d summary.r.nr_split:                           %llu\n \
+			%d,%d summary.r.nr_split_sector_acc:                %llu\n \
+			%d,%d summary.r.nr_merge:                           %llu\n \
+			%d,%d summary.r.nr_merge_sector_acc:                %llu\n \
+			%d,%d summary.r.nr_complete:                        %llu\n \
+			%d,%d summary.r.nr_complete_sector_acc:             %llu\n \
+			%d,%d summary.r.nr_sector_max:                      %llu\n \
+			%d,%d summary.r.nr_sector_min:                      %llu\n \
+			%d,%d summary.r.nr_sector_avg:                      %llu\n",
+			dev->major, dev->minor, dev->r.summary.q2q_acc_origin / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.q2q_max_origin / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.q2q_min_origin / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.q2q_avg_origin / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.nr_q2q_origin,
+			dev->major, dev->minor, dev->r.summary.q2q_acc / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.q2q_max / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.q2q_min / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.q2q_avg / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.nr_q2q,
+			dev->major, dev->minor, dev->r.summary.q2g_acc / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.q2g_max / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.q2g_min / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.q2g_avg / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.nr_q2g,
+			dev->major, dev->minor, dev->r.summary.q2c_acc / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.q2c_max / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.q2c_min / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.q2c_avg / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.nr_q2c,
+			dev->major, dev->minor, dev->r.summary.d2c_acc / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.d2c_max / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.d2c_min / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.d2c_avg / 1000000.0,
+			dev->major, dev->minor, dev->r.summary.nr_d2c,
+			dev->major, dev->minor, dev->r.summary.nr_queue_origin,
+			dev->major, dev->minor, dev->r.summary.nr_queue_sector_acc_origin,
+			dev->major, dev->minor, dev->r.summary.nr_queue,
+			dev->major, dev->minor, dev->r.summary.nr_queue_sector_acc,
+			dev->major, dev->minor, dev->r.summary.nr_split,
+			dev->major, dev->minor, dev->r.summary.nr_split_sector_acc,
+			dev->major, dev->minor, dev->r.summary.nr_merge,
+			dev->major, dev->minor, dev->r.summary.nr_merge_sector_acc,
+			dev->major, dev->minor, dev->r.summary.nr_complete,
+			dev->major, dev->minor, dev->r.summary.nr_complete_sector_acc,
+			dev->major, dev->minor, dev->r.summary.nr_sector_max,
+			dev->major, dev->minor, dev->r.summary.nr_sector_min,
+			dev->major, dev->minor, dev->r.summary.nr_sector_avg
+		);
+
+		printf(" \
+			%d,%d summary.w.q2q_acc_origin:                     %.6lf\n \
+			%d,%d summary.w.q2q_max_origin:                     %.6lf\n \
+			%d,%d summary.w.q2q_min_origin:                     %.6lf\n \
+			%d,%d summary.w.q2q_avg_origin:                     %.6lf\n \
+			%d,%d summary.w.nr_q2q_origin:                      %llu\n \
+			%d,%d summary.w.q2q_acc:                            %.6lf\n \
+			%d,%d summary.w.q2q_max:                            %.6lf\n \
+			%d,%d summary.w.q2q_min:                            %.6lf\n \
+			%d,%d summary.w.q2q_avg:                            %.6lf\n \
+			%d,%d summary.w.nr_q2q:                             %llu\n \
+			%d,%d summary.w.q2g_acc:                            %.6lf\n \
+			%d,%d summary.w.q2g_max:                            %.6lf\n \
+			%d,%d summary.w.q2g_min:                            %.6lf\n \
+			%d,%d summary.w.q2g_avg:                            %.6lf\n \
+			%d,%d summary.w.nr_q2g:                             %llu\n \
+			%d,%d summary.w.q2c_acc:                            %.6lf\n \
+			%d,%d summary.w.q2c_max:                            %.6lf\n \
+			%d,%d summary.w.q2c_min:                            %.6lf\n \
+			%d,%d summary.w.q2c_avg:                            %.6lf\n \
+			%d,%d summary.w.nr_q2c:                             %llu\n \
+			%d,%d summary.w.d2c_acc:                            %.6lf\n \
+			%d,%d summary.w.d2c_max:                            %.6lf\n \
+			%d,%d summary.w.d2c_min:                            %.6lf\n \
+			%d,%d summary.w.d2c_avg:                            %.6lf\n \
+			%d,%d summary.w.nr_d2c:                             %llu\n \
+			%d,%d summary.w.nr_queue_origin:                    %llu\n \
+			%d,%d summary.w.nr_queue_sector_acc_origin:         %llu\n \
+			%d,%d summary.w.nr_queue:                           %llu\n \
+			%d,%d summary.w.nr_queue_sector_acc:                %llu\n \
+			%d,%d summary.w.nr_split:                           %llu\n \
+			%d,%d summary.w.nr_split_sector_acc:                %llu\n \
+			%d,%d summary.w.nr_merge:                           %llu\n \
+			%d,%d summary.w.nr_merge_sector_acc:                %llu\n \
+			%d,%d summary.w.nr_complete:                        %llu\n \
+			%d,%d summary.w.nr_complete_sector_acc:             %llu\n \
+			%d,%d summary.w.nr_sector_max:                      %llu\n \
+			%d,%d summary.w.nr_sector_min:                      %llu\n \
+			%d,%d summary.w.nr_sector_avg:                      %llu\n",
+			dev->major, dev->minor, dev->w.summary.q2q_acc_origin / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.q2q_max_origin / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.q2q_min_origin / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.q2q_avg_origin / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.nr_q2q_origin,
+			dev->major, dev->minor, dev->w.summary.q2q_acc / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.q2q_max / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.q2q_min / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.q2q_avg / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.nr_q2q,
+			dev->major, dev->minor, dev->w.summary.q2g_acc / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.q2g_max / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.q2g_min / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.q2g_avg / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.nr_q2g,
+			dev->major, dev->minor, dev->w.summary.q2c_acc / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.q2c_max / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.q2c_min / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.q2c_avg / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.nr_q2c,
+			dev->major, dev->minor, dev->w.summary.d2c_acc / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.d2c_max / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.d2c_min / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.d2c_avg / 1000000.0,
+			dev->major, dev->minor, dev->w.summary.nr_d2c,
+			dev->major, dev->minor, dev->w.summary.nr_queue_origin,
+			dev->major, dev->minor, dev->w.summary.nr_queue_sector_acc_origin,
+			dev->major, dev->minor, dev->w.summary.nr_queue,
+			dev->major, dev->minor, dev->w.summary.nr_queue_sector_acc,
+			dev->major, dev->minor, dev->w.summary.nr_split,
+			dev->major, dev->minor, dev->w.summary.nr_split_sector_acc,
+			dev->major, dev->minor, dev->w.summary.nr_merge,
+			dev->major, dev->minor, dev->w.summary.nr_merge_sector_acc,
+			dev->major, dev->minor, dev->w.summary.nr_complete,
+			dev->major, dev->minor, dev->w.summary.nr_complete_sector_acc,
+			dev->major, dev->minor, dev->w.summary.nr_sector_max,
+			dev->major, dev->minor, dev->w.summary.nr_sector_min,
+			dev->major, dev->minor, dev->w.summary.nr_sector_avg
 		);
 	}
 }
