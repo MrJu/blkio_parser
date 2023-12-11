@@ -49,6 +49,8 @@ struct pattern {
 	int count;
 	regex_t regex;
 	const char *event;
+	int (*parse) (const char *, struct pattern *, struct event *);
+	int (*dump) (struct event *);
 };
 
 struct event {
@@ -115,70 +117,6 @@ struct device {
 	struct group r, w, rw;
 };
 
-struct pattern patterns[] = {
-	{
-		.type = 'G',
-    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_getrq: " \
-			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
-		.count = 9,
-		.regex = NULL,
-		.event = "block_getrq"
-	},
-	{
-		.type = 'D',
-		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_rq_issue: " \
-			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\(\\) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
-		.count = 10,
-		.regex = NULL,
-		.event = "block_rq_issue"
-	},
-	{
-		.type = 'C',
-    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_rq_complete: " \
-			 	"([0-9]+),([0-9]+) (\\w+) \\(.*\\) ([0-9]+) \\+ ([0-9]+) \\[([0-9]+)\\]",
-		.count = 9,
-		.regex = NULL,
-		.event = "block_rq_complete"
-
-	},
-	{
-		.type = 'S',
-    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_split: " \
-			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) / ([0-9]+) \\[(.+)\\]",
-		.count = 9,
-		.regex = NULL,
-		.event = "block_split"
-	},
-	{
-		.type = 'I',
-    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_rq_insert: "  \
-			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\(\\) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
-		.count = 10,
-		.regex = NULL,
-		.event = "block_rq_insert"
-	},
-	{
-		.type = 'Q',
-		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_bio_queue: " \
-			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
-		.count = 9,
-		.regex = NULL,
-		.event = "block_bio_queue"
-	},
-	{
-		.type = 'M',
-		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_bio_backmerge: " \
-			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
-		.count = 9,
-		.regex = NULL,
-		.event = "block_bio_backmerge"
-	},
-	{
-		.type = 0,
-		.expr = NULL,
-	},
-};
-
 void dump_event(struct event *e) {
 	switch (e->type) {
 		case 'Q':
@@ -214,6 +152,173 @@ void dump_event(struct event *e) {
 	}
 }
 
+/* for the same pattern Q S G M as group Q */
+int parse_event_group_q(const char *buf, struct pattern *matched, struct event *e)
+{
+	int ret;
+	double time;
+
+	ret = sscanf(buf, "%u %u %lf %u %u %s %llu %llu %s",
+			&e->pid, &e->cpu, &time, &e->major, &e->minor,
+			e->rwbs, &e->sector, &e->nr_sector, e->comm);
+
+	if (ret == matched->count) {
+		e->type = matched->type;
+		e->time = (unsigned long long) (time *1000000);
+		e->valid = 1;
+	} else
+		e->valid = 0;
+
+	return e->valid;
+}
+
+int parse_event_queue(const char *buf, struct pattern *matched, struct event *e)
+{
+	return parse_event_group_q(buf, matched, e);
+}
+
+int parse_event_split(const char *buf, struct pattern *matched, struct event *e)
+{
+	return parse_event_group_q(buf, matched, e);
+}
+
+int parse_event_getrq(const char *buf, struct pattern *matched, struct event *e)
+{
+	return parse_event_group_q(buf, matched, e);
+}
+
+int parse_event_merge(const char *buf, struct pattern *matched, struct event *e)
+{
+	return parse_event_group_q(buf, matched, e);
+}
+
+/* for the same pattern I D as group I */
+int parse_event_group_i(const char *buf, struct pattern *matched, struct event *e)
+{
+	int ret;
+	double time;
+
+	ret = sscanf(buf, "%u %u %lf %u %u %s %llu %llu %llu %s",
+			&e->pid, &e->cpu, &time, &e->major, &e->minor,
+			e->rwbs, &e->bytes, &e->sector, &e->nr_sector, e->comm);
+
+	if (ret == matched->count) {
+		e->type = matched->type;
+		e->time = (unsigned long long) (time *1000000);
+		e->valid = 1;
+	} else
+		e->valid = 0;
+
+	return e->valid;
+}
+
+int parse_event_insert(const char *buf, struct pattern *matched, struct event *e)
+{
+	return parse_event_group_i(buf, matched, e);
+}
+
+int parse_event_issue(const char *buf, struct pattern *matched, struct event *e)
+{
+	return parse_event_group_i(buf, matched, e);
+}
+
+int parse_event_complete(const char *buf, struct pattern *matched, struct event *e)
+{
+	int ret;
+	double time;
+
+	ret = sscanf(buf, "%u %u %lf %u %u %s %llu %llu %d",
+			&e->pid, &e->cpu, &time, &e->major, &e->minor,
+			e->rwbs, &e->sector, &e->nr_sector, &e->error);
+
+	if (ret == matched->count) {
+		e->type = matched->type;
+		e->time = (unsigned long long) (time *1000000);
+		e->valid = 1;
+	} else
+		e->valid = 0;
+
+	return e->valid;
+}
+
+#define EXPR_GROUP_Q (".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_bio_queue: ([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]")
+
+#define TRACE_COMMON ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): "
+#define __EXPR_GROUP_Q "block_bio_queue: ([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]"
+// #define EXPR_GROUP_Q (TRACE_COMMON __EXPR_GROUP_Q)
+
+
+struct pattern patterns[] = {
+	{
+		.type = 'G',
+    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_getrq: " \
+			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
+		.count = 9,
+		.regex = NULL,
+		.event = "block_getrq",
+		.parse = parse_event_getrq,
+	},
+	{
+		.type = 'D',
+		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_rq_issue: " \
+			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\(\\) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
+		.count = 10,
+		.regex = NULL,
+		.event = "block_rq_issue",
+		.parse = parse_event_issue,
+	},
+	{
+		.type = 'C',
+    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_rq_complete: " \
+			 	"([0-9]+),([0-9]+) (\\w+) \\(.*\\) ([0-9]+) \\+ ([0-9]+) \\[([0-9]+)\\]",
+		.count = 9,
+		.regex = NULL,
+		.event = "block_rq_complete",
+		.parse = parse_event_complete,
+
+	},
+	{
+		.type = 'S',
+    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_split: " \
+			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) / ([0-9]+) \\[(.+)\\]",
+		.count = 9,
+		.regex = NULL,
+		.event = "block_split",
+		.parse = parse_event_split,
+	},
+	{
+		.type = 'I',
+    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_rq_insert: "  \
+			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\(\\) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
+		.count = 10,
+		.regex = NULL,
+		.event = "block_rq_insert",
+		.parse = parse_event_insert,
+	},
+	{
+		.type = 'Q',
+		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_bio_queue: " \
+			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
+		.count = 9,
+		.regex = NULL,
+		.event = "block_bio_queue",
+		.parse = parse_event_queue,
+	},
+	{
+		.type = 'M',
+		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_bio_backmerge: " \
+			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
+		.count = 9,
+		.regex = NULL,
+		.event = "block_bio_backmerge",
+		.parse = parse_event_merge,
+	},
+	{
+		.type = 0,
+		.expr = NULL,
+	},
+};
+
 int parse_event(const char *record, struct event *e)
 {
 	int i, ret = 0;
@@ -221,7 +326,6 @@ int parse_event(const char *record, struct event *e)
 	int count, offset = 0;
 	regmatch_t matches[MAX_MATCHES];
 	struct pattern *matched = NULL;
-	double time;
 
 	count0++;
 	for (i = 0; patterns[i].expr; i++) {
@@ -237,6 +341,7 @@ int parse_event(const char *record, struct event *e)
 	if (!matched) {
 		// printf("== %s", record);	
 		e->valid = 0;
+		/* not matched but not as error */
 		return 0;
 	}
 
@@ -254,45 +359,14 @@ int parse_event(const char *record, struct event *e)
 	}
 
 	// printf("temp: %s\n", temp);
+	
 
-	switch (matched->type) {
-		case 'Q':
-		case 'S':
-		case 'G':
-		case 'M':
-			ret = sscanf(temp, "%u %u %lf %u %u %s %llu %llu %s",
-					&e->pid, &e->cpu, &time, &e->major, &e->minor,
-					e->rwbs, &e->sector, &e->nr_sector, e->comm);
-			break;
-		case 'I':
-		case 'D':
-			ret = sscanf(temp, "%u %u %lf %u %u %s %llu %llu %llu %s",
-					&e->pid, &e->cpu, &time, &e->major, &e->minor,
-					e->rwbs, &e->bytes, &e->sector, &e->nr_sector, e->comm);
-			break;
-		case 'C':
-			ret = sscanf(temp, "%u %u %lf %u %u %s %llu %llu %d",
-					&e->pid, &e->cpu, &time, &e->major, &e->minor,
-					e->rwbs, &e->sector, &e->nr_sector, &e->error);
-			break;
-		default:
-			e->valid = 0;
-			printf("%c\n", matched->type);
-	}
-
-	if (ret == matched->count) {
-		e->type = matched->type;
-		e->time = (unsigned long long) (time *1000000);
-		e->valid = 1;
-	} else {
-		e->valid = 0;
-	}
+	/* matched by a certain pattern, then parse the evevt */
+	ret = matched->parse(temp, matched, e);
 
 	// dump_event(e);
 
-	line_count++;
-
-	return e->valid;
+	return ret;
 }
 
 struct device *search_for_device(struct event *e, struct list_head *head)
@@ -1120,7 +1194,7 @@ int main(int argc, char **argv)
 	if (ret)
 		return ret;
 
-	f = fopen("trace04.txt", "r");
+	f = fopen("trace.txt", "r");
 	if (!f) {
 		printf("Error! opening file");
 		return 1;
