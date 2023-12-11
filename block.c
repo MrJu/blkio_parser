@@ -14,6 +14,27 @@
 #define MAX_MATCHES 16
 #define TASK_COMM_LEN 16
 
+/* 
+ * block:block_rq_remap
+ * block:block_bio_remap
+ * block:block_split
+ * block:block_unplug
+ * block:block_plug
+ * block:block_getrq
+ * block:block_bio_queue
+ * block:block_bio_frontmerge
+ * block:block_bio_backmerge
+ * block:block_bio_bounce
+ * block:block_bio_complete
+ * block:block_rq_merge
+ * block:block_rq_issue
+ * block:block_rq_insert
+ * block:block_rq_complete
+ * block:block_rq_requeue
+ * block:block_dirty_buffer
+ * block:block_touch_buffer
+ */
+
 LIST_HEAD(queue_list);
 LIST_HEAD(device_list);
 LIST_HEAD(task_list);
@@ -155,7 +176,7 @@ struct pattern patterns[] = {
 	{
 		.type = 0,
 		.expr = NULL,
-	}
+	},
 };
 
 void dump_event(struct event *e) {
@@ -166,7 +187,7 @@ void dump_event(struct event *e) {
 		case 'M':
 			printf("%c: pid:%u cpu:%u time:%llu " \
 					"major:%u minor:%u rwbs:%s " \
-					"sector:%llu nr_sector:%llu comm:%s\n",
+					"sector:%llu nr_sector:%llu c{omm:%s\n",
 					e->type, e->pid, e->cpu, e->time,
 					e->major, e->minor, e->rwbs,
 					e->sector, e->nr_sector, e->comm);
@@ -787,11 +808,15 @@ void __update_summary(struct group *grp, struct io *io)
 	update_summary_d2c(grp, io);
 }
 
-static int compare(void *priv, const struct list_head *a, const struct list_head *b) {
+#define __maybe_unused(arg) ((void) arg)
+
+static int compare(void *priv, const struct list_head *a, const struct list_head *b)
+{
+	__maybe_unused(priv);
 	struct io *io_a = list_entry(a, struct io, entry);
 	struct io *io_b = list_entry(b, struct io, entry);
 
-    return io_a->account.time.q - io_b->account.time.q;
+	return io_a->account.time.q - io_b->account.time.q;
 }
 
 void process_post(void)
@@ -1083,17 +1108,19 @@ void test(void)
 
 int main(int argc, char **argv)
 {
+	__maybe_unused(argc);
+	__maybe_unused(argv);
+
 	int ret;
 	char record[512];
 	FILE *f;
 	struct event *e;
 
-
 	ret = regex_init();
 	if (ret)
 		return ret;
 
-	f = fopen("trace.txt", "r");
+	f = fopen("trace04.txt", "r");
 	if (!f) {
 		printf("Error! opening file");
 		return 1;
