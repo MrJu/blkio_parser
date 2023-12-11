@@ -10,6 +10,7 @@
 
 #include <list_sort.h>
 #include <list.h>
+#include <pattern.h>
 
 #define MAX_MATCHES 16
 #define TASK_COMM_LEN 16
@@ -46,7 +47,7 @@ static int line_count = 0;
 struct pattern {
 	char type;
 	const char *expr;
-	int count;
+	unsigned nr_args;
 	regex_t regex;
 	const char *event;
 	int (*parse) (const char *, struct pattern *, struct event *);
@@ -152,7 +153,7 @@ void dump_event(struct event *e) {
 	}
 }
 
-/* for the same pattern Q S G M as group Q */
+/* for events parsed by the same method, regard Q S G M as group Q */
 int parse_event_group_q(const char *buf, struct pattern *matched, struct event *e)
 {
 	int ret;
@@ -162,7 +163,7 @@ int parse_event_group_q(const char *buf, struct pattern *matched, struct event *
 			&e->pid, &e->cpu, &time, &e->major, &e->minor,
 			e->rwbs, &e->sector, &e->nr_sector, e->comm);
 
-	if (ret == matched->count) {
+	if (ret == matched->nr_args) {
 		e->type = matched->type;
 		e->time = (unsigned long long) (time *1000000);
 		e->valid = 1;
@@ -192,7 +193,7 @@ int parse_event_merge(const char *buf, struct pattern *matched, struct event *e)
 	return parse_event_group_q(buf, matched, e);
 }
 
-/* for the same pattern I D as group I */
+/* for events parsed by the same method, regard I D as group Q */
 int parse_event_group_i(const char *buf, struct pattern *matched, struct event *e)
 {
 	int ret;
@@ -202,7 +203,7 @@ int parse_event_group_i(const char *buf, struct pattern *matched, struct event *
 			&e->pid, &e->cpu, &time, &e->major, &e->minor,
 			e->rwbs, &e->bytes, &e->sector, &e->nr_sector, e->comm);
 
-	if (ret == matched->count) {
+	if (ret == matched->nr_args) {
 		e->type = matched->type;
 		e->time = (unsigned long long) (time *1000000);
 		e->valid = 1;
@@ -231,7 +232,7 @@ int parse_event_complete(const char *buf, struct pattern *matched, struct event 
 			&e->pid, &e->cpu, &time, &e->major, &e->minor,
 			e->rwbs, &e->sector, &e->nr_sector, &e->error);
 
-	if (ret == matched->count) {
+	if (ret == matched->nr_args) {
 		e->type = matched->type;
 		e->time = (unsigned long long) (time *1000000);
 		e->valid = 1;
@@ -241,35 +242,11 @@ int parse_event_complete(const char *buf, struct pattern *matched, struct event 
 	return e->valid;
 }
 
-#define TRACE_COMMON ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): "
-
-#define __EXPR_G "block_getrq: ([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]"
-#define EXPR_G (TRACE_COMMON __EXPR_G)
-
-#define __EXPR_D "block_rq_issue: ([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\(\\) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]"
-#define EXPR_D (TRACE_COMMON __EXPR_D)
-
-#define __EXPR_C "block_rq_complete: ([0-9]+),([0-9]+) (\\w+) \\(.*\\) ([0-9]+) \\+ ([0-9]+) \\[([0-9]+)\\]"
-#define EXPR_C (TRACE_COMMON __EXPR_C)
-
-#define __EXPR_S "block_split: ([0-9]+),([0-9]+) (\\w+) ([0-9]+) / ([0-9]+) \\[(.+)\\]"
-#define EXPR_S (TRACE_COMMON __EXPR_S)
-
-#define __EXPR_I "block_rq_insert: ([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\(\\) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]"
-#define EXPR_I (TRACE_COMMON __EXPR_I)
-
-#define __EXPR_Q "block_bio_queue: ([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]"
-#define EXPR_Q (TRACE_COMMON __EXPR_Q)
-
-#define __EXPR_M "block_bio_backmerge: ([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]"
-#define EXPR_M (TRACE_COMMON __EXPR_M)
-
-
 struct pattern patterns[] = {
 	{
 		.type = 'G',
 		.expr =  EXPR_G,
-		.count = 9,
+		.nr_args= 9,
 		.regex = NULL,
 		.event = "block_getrq",
 		.parse = parse_event_getrq,
@@ -277,7 +254,7 @@ struct pattern patterns[] = {
 	{
 		.type = 'D',
 		.expr =  EXPR_D,
-		.count = 10,
+		.nr_args = 10,
 		.regex = NULL,
 		.event = "block_rq_issue",
 		.parse = parse_event_issue,
@@ -285,7 +262,7 @@ struct pattern patterns[] = {
 	{
 		.type = 'C',
 		.expr =  EXPR_C,
-		.count = 9,
+		.nr_args = 9,
 		.regex = NULL,
 		.event = "block_rq_complete",
 		.parse = parse_event_complete,
@@ -294,7 +271,7 @@ struct pattern patterns[] = {
 	{
 		.type = 'S',
 		.expr =  EXPR_S,
-		.count = 9,
+		.nr_args = 9,
 		.regex = NULL,
 		.event = "block_split",
 		.parse = parse_event_split,
@@ -302,7 +279,7 @@ struct pattern patterns[] = {
 	{
 		.type = 'I',
 		.expr =  EXPR_I,
-		.count = 10,
+		.nr_args = 10,
 		.regex = NULL,
 		.event = "block_rq_insert",
 		.parse = parse_event_insert,
@@ -310,7 +287,7 @@ struct pattern patterns[] = {
 	{
 		.type = 'Q',
 		.expr =  EXPR_Q,
-		.count = 9,
+		.nr_args = 9,
 		.regex = NULL,
 		.event = "block_bio_queue",
 		.parse = parse_event_queue,
@@ -318,7 +295,7 @@ struct pattern patterns[] = {
 	{
 		.type = 'M',
 		.expr =  EXPR_M,
-		.count = 9,
+		.nr_args = 9,
 		.regex = NULL,
 		.event = "block_bio_backmerge",
 		.parse = parse_event_merge,
@@ -355,7 +332,7 @@ int parse_event(const char *record, struct event *e)
 		return 0;
 	}
 
-	for(i = 1, offset = 0; i < matched->count + 1; i++) {  
+	for(i = 1, offset = 0; i < matched->nr_args + 1; i++) {  
 		if (matches[i].rm_so == -1)
 			break;
 		count = sprintf(temp + offset, "%.*s ",
