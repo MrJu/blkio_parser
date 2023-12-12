@@ -50,7 +50,7 @@ struct pattern {
 	unsigned nr_args;
 	regex_t regex;
 	const char *event;
-	int (*parse) (const char *, struct pattern *, struct event *);
+	int (*parse) (const char *, struct event *);
 	int (*process)(struct event *);
 	int (*dump) (struct event *);
 };
@@ -119,6 +119,95 @@ struct device {
 	unsigned int minor;
 	struct group r, w, rw;
 };
+
+/* for events parsed by the same method, regard Q S G M as group Q */
+int parse_event_group_q(const char *buf, struct event *e)
+{
+	int ret;
+	double time;
+
+	ret = sscanf(buf, "%u %u %lf %u %u %s %llu %llu %s",
+			&e->pid, &e->cpu, &time, &e->major, &e->minor,
+			e->rwbs, &e->sector, &e->nr_sector, e->comm);
+
+	if (ret == e->match->nr_args) {
+		e->type = e->match->type;
+		e->time = (unsigned long long) (time *1000000);
+		e->valid = 1;
+	} else
+		e->valid = 0;
+
+	return e->valid;
+}
+
+int parse_event_queue(const char *buf, struct event *e)
+{
+	return parse_event_group_q(buf, e);
+}
+
+int parse_event_split(const char *buf, struct event *e)
+{
+	return parse_event_group_q(buf, e);
+}
+
+int parse_event_getrq(const char *buf, struct event *e)
+{
+	return parse_event_group_q(buf, e);
+}
+
+int parse_event_merge(const char *buf, struct event *e)
+{
+	return parse_event_group_q(buf, e);
+}
+
+/* for events parsed by the same method, regard I D as group Q */
+int parse_event_group_i(const char *buf, struct event *e)
+{
+	int ret;
+	double time;
+
+	ret = sscanf(buf, "%u %u %lf %u %u %s %llu %llu %llu %s",
+			&e->pid, &e->cpu, &time, &e->major, &e->minor,
+			e->rwbs, &e->bytes, &e->sector, &e->nr_sector, e->comm);
+
+	if (ret == e->match->nr_args) {
+		e->type = e->match->type;
+		e->time = (unsigned long long) (time *1000000);
+		e->valid = 1;
+	} else
+		e->valid = 0;
+
+	return e->valid;
+}
+
+int parse_event_insert(const char *buf, struct event *e)
+{
+	return parse_event_group_i(buf, e);
+}
+
+int parse_event_issue(const char *buf, struct event *e)
+{
+	return parse_event_group_i(buf, e);
+}
+
+int parse_event_complete(const char *buf, struct event *e)
+{
+	int ret;
+	double time;
+
+	ret = sscanf(buf, "%u %u %lf %u %u %s %llu %llu %d",
+			&e->pid, &e->cpu, &time, &e->major, &e->minor,
+			e->rwbs, &e->sector, &e->nr_sector, &e->error);
+
+	if (ret == e->match->nr_args) {
+		e->type = e->match->type;
+		e->time = (unsigned long long) (time *1000000);
+		e->valid = 1;
+	} else
+		e->valid = 0;
+
+	return e->valid;
+}
 
 struct device *search_for_device(struct event *e, struct list_head *head)
 {
@@ -346,128 +435,71 @@ int process_event(struct event *e)
 	return e->match->process(e);
 }
 
-void dump_event(struct event *e) {
-	switch (e->type) {
-		case 'Q':
-		case 'S':
-		case 'G':
-		case 'M':
-			printf("%c: pid:%u cpu:%u time:%llu " \
-					"major:%u minor:%u rwbs:%s " \
-					"sector:%llu nr_sector:%llu c{omm:%s\n",
-					e->type, e->pid, e->cpu, e->time,
-					e->major, e->minor, e->rwbs,
-					e->sector, e->nr_sector, e->comm);
-			break;
-		case 'I':
-		case 'D':
-			printf("%c: pid:%u cpu:%u time:%llu " \
-					"major:%u minor:%u rwbs:%s bytes:%llu " \
-					"sector:%llu nr_sector:%llu comm:%s\n",
-					e->type, e->pid, e->cpu, e->time,
-					e->major, e->minor, e->rwbs, e->bytes,
-					e->sector, e->nr_sector, e->comm);
-			break;
-		case 'C':
-			printf("%c: pid:%u cpu:%u time:%llu " \
-					"major:%u minor:%u rwbs:%s " \
-					"sector:%llu nr_sector:%llu error:%d\n",
-					e->type, e->pid, e->cpu, e->time,
-					e->major, e->minor, e->rwbs,
-					e->sector, e->nr_sector, e->error);
-			break;
-		default:
-			printf("%c: not parsed\n", e->type);
-	}
-}
-
 /* for events parsed by the same method, regard Q S G M as group Q */
-int parse_event_group_q(const char *buf, struct pattern *matched, struct event *e)
+void dump_event_group_q(struct event *e)
 {
-	int ret;
-	double time;
-
-	ret = sscanf(buf, "%u %u %lf %u %u %s %llu %llu %s",
-			&e->pid, &e->cpu, &time, &e->major, &e->minor,
-			e->rwbs, &e->sector, &e->nr_sector, e->comm);
-
-	if (ret == matched->nr_args) {
-		e->type = matched->type;
-		e->time = (unsigned long long) (time *1000000);
-		e->valid = 1;
-	} else
-		e->valid = 0;
-
-	return e->valid;
+	printf("%c: pid:%u cpu:%u time:%llu major:%u minor:%u rwbs:%s " \
+			"sector:%llu nr_sector:%llu comm:%s\n",
+			e->type, e->pid, e->cpu, e->time,
+			e->major, e->minor, e->rwbs,
+			e->sector, e->nr_sector, e->comm);
 }
 
-int parse_event_queue(const char *buf, struct pattern *matched, struct event *e)
+void dump_event_queue(struct event *e)
 {
-	return parse_event_group_q(buf, matched, e);
+	return dump_event_group_q(e);
 }
 
-int parse_event_split(const char *buf, struct pattern *matched, struct event *e)
+void dump_event_split(struct event *e)
 {
-	return parse_event_group_q(buf, matched, e);
+	return dump_event_group_q(e);
 }
 
-int parse_event_getrq(const char *buf, struct pattern *matched, struct event *e)
+void dump_event_getrq(struct event *e)
 {
-	return parse_event_group_q(buf, matched, e);
+	return dump_event_group_q(e);
 }
 
-int parse_event_merge(const char *buf, struct pattern *matched, struct event *e)
+void dump_event_merge(struct event *e)
 {
-	return parse_event_group_q(buf, matched, e);
+	return dump_event_group_q(e);
 }
 
 /* for events parsed by the same method, regard I D as group Q */
-int parse_event_group_i(const char *buf, struct pattern *matched, struct event *e)
+void dump_event_group_i(struct event *e)
 {
-	int ret;
-	double time;
-
-	ret = sscanf(buf, "%u %u %lf %u %u %s %llu %llu %llu %s",
-			&e->pid, &e->cpu, &time, &e->major, &e->minor,
-			e->rwbs, &e->bytes, &e->sector, &e->nr_sector, e->comm);
-
-	if (ret == matched->nr_args) {
-		e->type = matched->type;
-		e->time = (unsigned long long) (time *1000000);
-		e->valid = 1;
-	} else
-		e->valid = 0;
-
-	return e->valid;
+	printf("%c: pid:%u cpu:%u time:%llu major:%u minor:%u rwbs:%s " \
+			"bytes:%llu sector:%llu nr_sector:%llu comm:%s\n",
+			e->type, e->pid, e->cpu, e->time,
+			e->major, e->minor, e->rwbs, e->bytes,
+			e->sector, e->nr_sector, e->comm);
 }
 
-int parse_event_insert(const char *buf, struct pattern *matched, struct event *e)
+void dump_event_insert(struct event *e)
 {
-	return parse_event_group_i(buf, matched, e);
+	return dump_event_group_i(e);
 }
 
-int parse_event_issue(const char *buf, struct pattern *matched, struct event *e)
+void dump_event_issue(struct event *e)
 {
-	return parse_event_group_i(buf, matched, e);
+	return dump_event_group_i(e);
 }
 
-int parse_event_complete(const char *buf, struct pattern *matched, struct event *e)
+void dump_event_complete(struct event *e)
 {
-	int ret;
-	double time;
+	printf("%c: pid:%u cpu:%u time:%llu major:%u minor:%u rwbs:%s " \
+			"sector:%llu nr_sector:%llu error:%d\n",
+			e->type, e->pid, e->cpu, e->time,
+			e->major, e->minor, e->rwbs,
+			e->sector, e->nr_sector, e->error);
+}
 
-	ret = sscanf(buf, "%u %u %lf %u %u %s %llu %llu %d",
-			&e->pid, &e->cpu, &time, &e->major, &e->minor,
-			e->rwbs, &e->sector, &e->nr_sector, &e->error);
+void dump_event(struct event *e)
+{
+	if (!e->valid)
+		return;
 
-	if (ret == matched->nr_args) {
-		e->type = matched->type;
-		e->time = (unsigned long long) (time *1000000);
-		e->valid = 1;
-	} else
-		e->valid = 0;
-
-	return e->valid;
+	e->match->dump(e);
 }
 
 struct pattern patterns[] = {
@@ -479,6 +511,7 @@ struct pattern patterns[] = {
 		.event = "block_getrq",
 		.parse = parse_event_getrq,
 		.process = process_event_getrq,
+		.dump = dump_event_getrq,
 	},
 	{
 		.type = 'D',
@@ -488,6 +521,7 @@ struct pattern patterns[] = {
 		.event = "block_rq_issue",
 		.parse = parse_event_issue,
 		.process = process_event_issue,
+		.dump = dump_event_issue,
 	},
 	{
 		.type = 'C',
@@ -497,6 +531,7 @@ struct pattern patterns[] = {
 		.event = "block_rq_complete",
 		.parse = parse_event_complete,
 		.process = process_event_complete,
+		.dump = dump_event_complete,
 
 	},
 	{
@@ -507,6 +542,7 @@ struct pattern patterns[] = {
 		.event = "block_split",
 		.parse = parse_event_split,
 		.process = process_event_split,
+		.dump = dump_event_split,
 	},
 	{
 		.type = 'I',
@@ -516,6 +552,7 @@ struct pattern patterns[] = {
 		.event = "block_rq_insert",
 		.parse = parse_event_insert,
 		.process = process_event_insert,
+		.dump = dump_event_insert,
 	},
 	{
 		.type = 'Q',
@@ -525,6 +562,7 @@ struct pattern patterns[] = {
 		.event = "block_bio_queue",
 		.parse = parse_event_queue,
 		.process = process_event_queue,
+		.dump = dump_event_queue,
 	},
 	{
 		.type = 'M',
@@ -534,6 +572,7 @@ struct pattern patterns[] = {
 		.event = "block_bio_backmerge",
 		.parse = parse_event_merge,
 		.process = process_event_merge,
+		.dump = dump_event_merge,
 	},
 	{
 		.type = 0,
@@ -589,9 +628,9 @@ int parse_event(const char *record, struct event *e)
 	
 
 	/* matched by a certain pattern, then parse the evevt */
-	ret = e->match->parse(temp, matched, e);
+	ret = e->match->parse(temp, e);
 
-	// dump_event(e);
+	dump_event(e);
 
 	return ret;
 }
@@ -883,7 +922,6 @@ void process_post(void)
 	list_for_each_entry(dev, &device_list, entry) {
 		list_sort(NULL, &dev->io, compare);
 		list_for_each_entry(io, &dev->io, entry) {
-
 			update_summary(dev, r, io);
 			update_summary(dev, w, io);
 			update_summary(dev, rw, io);
