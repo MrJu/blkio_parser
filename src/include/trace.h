@@ -8,10 +8,16 @@
 #define TASK_COMM_LEN 16
 
 #define EXPR_COMMON ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): "
+#define __section __attribute((section(".app_init_sec")))
 
 struct event;
 struct pattern;
-
+ 
+typedef struct init_t {
+        int (*func)(int, char **);
+        char *name;
+}_init_t;
+ 
 struct pattern {
 	const char *expr;
 	regex_t regex;

@@ -19,6 +19,7 @@
 #define _LINUX_LIST_H
 
 #include <stdio.h>
+#include <stddef.h>
 /**
  * @name from other kernel headers
  */
@@ -37,8 +38,8 @@
  *
  */
 #define container_of(ptr, type, member) ({                      \
-        const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
-        (type *)( (char *)__mptr - offsetof(type,member) );})
+	const __typeof__( ((type *)0)->member ) *__mptr = (ptr);   \
+	(type *)( (char *)__mptr - offsetof(type, member) ); })
 /*@}*/
 
 

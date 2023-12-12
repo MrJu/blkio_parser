@@ -1,23 +1,22 @@
-CC=gcc
-CFLAGS=-Wall -Wextra -g -Iinclude
+CC = gcc
+CFLAGS = -Wall -Wextra -Isrc/include -Isrc/app/include
+LDSCRIPT = script.lds
+TARGET = main
+BUILDDIR = build
+VPATH = src:src/app
 
-all: main
+SRCS = $(wildcard src/*.c) $(wildcard src/app/*.c)
+OBJS = $(patsubst src/%.c,$(BUILDDIR)/%.o,$(SRCS))
 
-main: main.o trace.o list_sort.o block.o
-	$(CC) $(CFLAGS) -o main main.o trace.o list_sort.o block.o
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ -T $(LDSCRIPT)
 
-block.o: block.c
-	$(CC) $(CFLAGS) -c block.c
+$(BUILDDIR)/%.o: %.c | $(BUILDDIR)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
-list_sort.o: list_sort.c
-	$(CC) $(CFLAGS) -c list_sort.c
-
-trace.o: list_sort.c
-	$(CC) $(CFLAGS) -c trace.c
-
-main.o: main.c
-	$(CC) $(CFLAGS) -c main.c
+$(BUILDDIR):
+	mkdir -p $(BUILDDIR)/app
 
 clean:
-	rm -f main main.o trace.o list_sort.o block.o
+	rm -rf $(BUILDDIR) $(TARGET)
 

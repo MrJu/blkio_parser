@@ -6,7 +6,9 @@
 
 extern struct pattern patt[];
 
-int main(int argc, char **argv)
+int __stub(int argc, char **argv);
+
+int __stub(int argc, char **argv)
 {
 	int ret;
 	char record[512];
@@ -46,3 +48,6 @@ int main(int argc, char **argv)
 
 	return 0;
 }
+
+_init_t _func1 __section = {__stub, "func1"};
+_init_t _func2 __section = {__stub, "func2"};
