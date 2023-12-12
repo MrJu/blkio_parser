@@ -10,7 +10,8 @@
 
 #include <list_sort.h>
 #include <list.h>
-#include <pattern.h>
+#include <trace.h>
+#include <block.h>
 
 #define MAX_MATCHES 16
 #define TASK_COMM_LEN 16
@@ -678,14 +679,11 @@ void update_summary_q2q_origin(struct group *group, struct io *io)
 		/* save the the time of 1st queue for the next cycle */
 		group->summary.q2q_iter_origin = io->account.time.q;
 		/* do nothing else for the 1st queue */
-		printf("io->account.time.q:%llu group->summary.q2q_iter_origin:%llu\n", io->account.time.q, group->summary.q2q_iter_origin);
 		return;
 	}
 
 	/* obtain the diff between last and this queue */
 	q2q = io->account.time.q - group->summary.q2q_iter_origin;
-	if (io->account.time.q < group->summary.q2q_iter_origin)
-		printf("io->account.time.q:%.6lf group->summary.q2q_iter_origin:%.6lf q2q:%.6lf\n", io->account.time.q / 1000000.0, group->summary.q2q_iter_origin / 1000000.0, q2q / 1000000.0);
 	/* update q2q_iter for the next cycle */
 	group->summary.q2q_iter_origin = io->account.time.q;
 
@@ -718,14 +716,11 @@ void update_summary_q2q(struct group *group, struct io *io)
 		/* save the the time of 1st queue for the next cycle */
 		group->summary.q2q_iter = io->account.time.q;
 		/* do nothing else for the 1st queue */
-		printf("io->account.time.q:%llu group->summary.q2q_iter:%llu\n", io->account.time.q, group->summary.q2q_iter);
 		return;
 	}
 
 	/* obtain the diff between last and this queue */
 	q2q = io->account.time.q - group->summary.q2q_iter;
-	if (io->account.time.q < group->summary.q2q_iter)
-		printf("io->account.time.q:%.6lf group->summary.q2q_iter:%.6lf q2q:%.6lf\n", io->account.time.q / 1000000.0, group->summary.q2q_iter / 1000000.0, q2q / 1000000.0);
 	/* update q2q_iter for the next cycle */
 	group->summary.q2q_iter = io->account.time.q;
 
