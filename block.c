@@ -49,10 +49,12 @@ struct pattern {
 	int count;
 	regex_t regex;
 	const char *event;
+	int (*process)(struct event *);
 };
 
 struct event {
 	struct list_head entry;
+	struct pattern *match;
 	unsigned char type;
 	unsigned int pid;
 	unsigned int cpu;
@@ -114,186 +116,6 @@ struct device {
 	unsigned int minor;
 	struct group r, w, rw;
 };
-
-struct pattern patterns[] = {
-	{
-		.type = 'G',
-    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_getrq: " \
-			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
-		.count = 9,
-		.regex = NULL,
-		.event = "block_getrq"
-	},
-	{
-		.type = 'D',
-		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_rq_issue: " \
-			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\(\\) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
-		.count = 10,
-		.regex = NULL,
-		.event = "block_rq_issue"
-	},
-	{
-		.type = 'C',
-    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_rq_complete: " \
-			 	"([0-9]+),([0-9]+) (\\w+) \\(.*\\) ([0-9]+) \\+ ([0-9]+) \\[([0-9]+)\\]",
-		.count = 9,
-		.regex = NULL,
-		.event = "block_rq_complete"
-
-	},
-	{
-		.type = 'S',
-    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_split: " \
-			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) / ([0-9]+) \\[(.+)\\]",
-		.count = 9,
-		.regex = NULL,
-		.event = "block_split"
-	},
-	{
-		.type = 'I',
-    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_rq_insert: "  \
-			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\(\\) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
-		.count = 10,
-		.regex = NULL,
-		.event = "block_rq_insert"
-	},
-	{
-		.type = 'Q',
-		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_bio_queue: " \
-			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
-		.count = 9,
-		.regex = NULL,
-		.event = "block_bio_queue"
-	},
-	{
-		.type = 'M',
-		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_bio_backmerge: " \
-			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
-		.count = 9,
-		.regex = NULL,
-		.event = "block_bio_backmerge"
-	},
-	{
-		.type = 0,
-		.expr = NULL,
-	},
-};
-
-void dump_event(struct event *e) {
-	switch (e->type) {
-		case 'Q':
-		case 'S':
-		case 'G':
-		case 'M':
-			printf("%c: pid:%u cpu:%u time:%llu " \
-					"major:%u minor:%u rwbs:%s " \
-					"sector:%llu nr_sector:%llu c{omm:%s\n",
-					e->type, e->pid, e->cpu, e->time,
-					e->major, e->minor, e->rwbs,
-					e->sector, e->nr_sector, e->comm);
-			break;
-		case 'I':
-		case 'D':
-			printf("%c: pid:%u cpu:%u time:%llu " \
-					"major:%u minor:%u rwbs:%s bytes:%llu " \
-					"sector:%llu nr_sector:%llu comm:%s\n",
-					e->type, e->pid, e->cpu, e->time,
-					e->major, e->minor, e->rwbs, e->bytes,
-					e->sector, e->nr_sector, e->comm);
-			break;
-		case 'C':
-			printf("%c: pid:%u cpu:%u time:%llu " \
-					"major:%u minor:%u rwbs:%s " \
-					"sector:%llu nr_sector:%llu error:%d\n",
-					e->type, e->pid, e->cpu, e->time,
-					e->major, e->minor, e->rwbs,
-					e->sector, e->nr_sector, e->error);
-			break;
-		default:
-			printf("%c: not parsed\n", e->type);
-	}
-}
-
-int parse_event(const char *record, struct event *e)
-{
-	int i, ret = 0;
-	char temp[256];
-	int count, offset = 0;
-	regmatch_t matches[MAX_MATCHES];
-	struct pattern *matched = NULL;
-	double time;
-
-	count0++;
-	for (i = 0; patterns[i].expr; i++) {
-		ret = regexec(&patterns[i].regex, record, MAX_MATCHES, matches, 0);
-		if (!ret) {
-			matched = &patterns[i];
-			count1++;
-			break;
-		} else
-			continue;
-	}
-
-	if (!matched) {
-		// printf("== %s", record);	
-		e->valid = 0;
-		return 0;
-	}
-
-	for(i = 1, offset = 0; i < matched->count + 1; i++) {  
-		if (matches[i].rm_so == -1)
-			break;
-		count = sprintf(temp + offset, "%.*s ",
-				matches[i].rm_eo - matches[i].rm_so,
-				record + matches[i].rm_so);  
-		if (count < 0)
-			return -1;
-			/* err handling */;
-		offset += count;
-			// printf("temp: %s\n", temp);
-	}
-
-	// printf("temp: %s\n", temp);
-
-	switch (matched->type) {
-		case 'Q':
-		case 'S':
-		case 'G':
-		case 'M':
-			ret = sscanf(temp, "%u %u %lf %u %u %s %llu %llu %s",
-					&e->pid, &e->cpu, &time, &e->major, &e->minor,
-					e->rwbs, &e->sector, &e->nr_sector, e->comm);
-			break;
-		case 'I':
-		case 'D':
-			ret = sscanf(temp, "%u %u %lf %u %u %s %llu %llu %llu %s",
-					&e->pid, &e->cpu, &time, &e->major, &e->minor,
-					e->rwbs, &e->bytes, &e->sector, &e->nr_sector, e->comm);
-			break;
-		case 'C':
-			ret = sscanf(temp, "%u %u %lf %u %u %s %llu %llu %d",
-					&e->pid, &e->cpu, &time, &e->major, &e->minor,
-					e->rwbs, &e->sector, &e->nr_sector, &e->error);
-			break;
-		default:
-			e->valid = 0;
-			printf("%c\n", matched->type);
-	}
-
-	if (ret == matched->count) {
-		e->type = matched->type;
-		e->time = (unsigned long long) (time *1000000);
-		e->valid = 1;
-	} else {
-		e->valid = 0;
-	}
-
-	// dump_event(e);
-
-	line_count++;
-
-	return e->valid;
-}
 
 struct device *search_for_device(struct event *e, struct list_head *head)
 {
@@ -517,27 +339,202 @@ int process_event(struct event *e)
 {
 	if (!e->valid)
 		return -EINVAL;
-	
+
+	return e->match->process(e);
+}
+
+struct pattern patterns[] = {
+	{
+		.type = 'G',
+    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_getrq: " \
+			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
+		.count = 9,
+		.regex = NULL,
+		.event = "block_getrq",
+		.process = process_event_getrq,
+	},
+	{
+		.type = 'D',
+		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_rq_issue: " \
+			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\(\\) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
+		.count = 10,
+		.regex = NULL,
+		.event = "block_rq_issue",
+		.process = process_event_issue,
+	},
+	{
+		.type = 'C',
+    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_rq_complete: " \
+			 	"([0-9]+),([0-9]+) (\\w+) \\(.*\\) ([0-9]+) \\+ ([0-9]+) \\[([0-9]+)\\]",
+		.count = 9,
+		.regex = NULL,
+		.event = "block_rq_complete",
+		.process = process_event_complete,
+
+	},
+	{
+		.type = 'S',
+    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_split: " \
+			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) / ([0-9]+) \\[(.+)\\]",
+		.count = 9,
+		.regex = NULL,
+		.event = "block_split",
+		.process = process_event_split,
+	},
+	{
+		.type = 'I',
+    		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_rq_insert: "  \
+			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\(\\) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
+		.count = 10,
+		.regex = NULL,
+		.event = "block_rq_insert",
+		.process = process_event_insert,
+	},
+	{
+		.type = 'Q',
+		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_bio_queue: " \
+			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
+		.count = 9,
+		.regex = NULL,
+		.event = "block_bio_queue",
+		.process = process_event_queue,
+	},
+	{
+		.type = 'M',
+		.expr = ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): block_bio_backmerge: " \
+			 	"([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]",
+		.count = 9,
+		.regex = NULL,
+		.event = "block_bio_merge",
+		.process = process_event_merge,
+	},
+	{
+		.type = 0,
+		.expr = NULL,
+	},
+};
+
+void dump_event(struct event *e) {
 	switch (e->type) {
 		case 'Q':
-			return process_event_queue(e); 
 		case 'S':
-			return process_event_split(e);
 		case 'G':
-			return process_event_getrq(e);
 		case 'M':
-			return process_event_merge(e);
+			printf("%c: pid:%u cpu:%u time:%llu " \
+					"major:%u minor:%u rwbs:%s " \
+					"sector:%llu nr_sector:%llu c{omm:%s\n",
+					e->type, e->pid, e->cpu, e->time,
+					e->major, e->minor, e->rwbs,
+					e->sector, e->nr_sector, e->comm);
+			break;
 		case 'I':
-			return process_event_insert(e);
 		case 'D':
-			return process_event_issue(e);
+			printf("%c: pid:%u cpu:%u time:%llu " \
+					"major:%u minor:%u rwbs:%s bytes:%llu " \
+					"sector:%llu nr_sector:%llu comm:%s\n",
+					e->type, e->pid, e->cpu, e->time,
+					e->major, e->minor, e->rwbs, e->bytes,
+					e->sector, e->nr_sector, e->comm);
+			break;
 		case 'C':
-			return process_event_complete(e);
+			printf("%c: pid:%u cpu:%u time:%llu " \
+					"major:%u minor:%u rwbs:%s " \
+					"sector:%llu nr_sector:%llu error:%d\n",
+					e->type, e->pid, e->cpu, e->time,
+					e->major, e->minor, e->rwbs,
+					e->sector, e->nr_sector, e->error);
+			break;
 		default:
-			return -EINVAL;
+			printf("%c: not parsed\n", e->type);
+	}
+}
+
+int parse_event(const char *record, struct event *e)
+{
+	int i, ret = 0;
+	char temp[256];
+	char *name;
+	int count, offset = 0;
+	regmatch_t matches[MAX_MATCHES];
+	struct pattern *matched = NULL;
+	double time;
+
+	count0++;
+	for (i = 0; patterns[i].expr; i++) {
+		name = strstr(record, patterns[i].event);
+		if (!name)
+			continue;
+		else {
+			ret = regexec(&patterns[i].regex, record, MAX_MATCHES, matches, 0);
+			if (!ret) {
+				/* matched */
+				matched = &patterns[i];
+				count1++;
+				break;
+			}
+		}
 	}
 
-	return 0;
+	if (!matched) {
+		// printf("== %s", record);	
+		e->valid = 0;
+		return 0;
+	}
+
+	for(i = 1, offset = 0; i < matched->count + 1; i++) {  
+		if (matches[i].rm_so == -1)
+			break;
+		count = sprintf(temp + offset, "%.*s ",
+				matches[i].rm_eo - matches[i].rm_so,
+				record + matches[i].rm_so);  
+		if (count < 0)
+			return -1;
+			/* err handling */;
+		offset += count;
+			// printf("temp: %s\n", temp);
+	}
+
+	// printf("temp: %s\n", temp);
+
+	switch (matched->type) {
+		case 'Q':
+		case 'S':
+		case 'G':
+		case 'M':
+			ret = sscanf(temp, "%u %u %lf %u %u %s %llu %llu %s",
+					&e->pid, &e->cpu, &time, &e->major, &e->minor,
+					e->rwbs, &e->sector, &e->nr_sector, e->comm);
+			break;
+		case 'I':
+		case 'D':
+			ret = sscanf(temp, "%u %u %lf %u %u %s %llu %llu %llu %s",
+					&e->pid, &e->cpu, &time, &e->major, &e->minor,
+					e->rwbs, &e->bytes, &e->sector, &e->nr_sector, e->comm);
+			break;
+		case 'C':
+			ret = sscanf(temp, "%u %u %lf %u %u %s %llu %llu %d",
+					&e->pid, &e->cpu, &time, &e->major, &e->minor,
+					e->rwbs, &e->sector, &e->nr_sector, &e->error);
+			break;
+		default:
+			e->valid = 0;
+			printf("%c\n", matched->type);
+	}
+
+	if (ret == matched->count) {
+		e->match = matched;
+		e->type = matched->type;
+		e->time = (unsigned long long) (time *1000000);
+		e->valid = 1;
+	} else {
+		e->valid = 0;
+	}
+
+	// dump_event(e);
+
+	line_count++;
+
+	return e->valid;
 }
 
 int regex_init(void)
@@ -583,14 +580,11 @@ void update_summary_q2q_origin(struct group *group, struct io *io)
 		/* save the the time of 1st queue for the next cycle */
 		group->summary.q2q_iter_origin = io->account.time.q;
 		/* do nothing else for the 1st queue */
-		printf("io->account.time.q:%llu group->summary.q2q_iter_origin:%llu\n", io->account.time.q, group->summary.q2q_iter_origin);
 		return;
 	}
 
 	/* obtain the diff between last and this queue */
 	q2q = io->account.time.q - group->summary.q2q_iter_origin;
-	if (io->account.time.q < group->summary.q2q_iter_origin)
-		printf("io->account.time.q:%.6lf group->summary.q2q_iter_origin:%.6lf q2q:%.6lf\n", io->account.time.q / 1000000.0, group->summary.q2q_iter_origin / 1000000.0, q2q / 1000000.0);
 	/* update q2q_iter for the next cycle */
 	group->summary.q2q_iter_origin = io->account.time.q;
 
@@ -607,8 +601,6 @@ void update_summary_q2q_origin(struct group *group, struct io *io)
 		= group->summary.q2q_acc_origin / group->summary.nr_q2q_origin;
 }
 
-
-
 void update_summary_q2q(struct group *group, struct io *io)
 {
 	double q2q;
@@ -623,14 +615,11 @@ void update_summary_q2q(struct group *group, struct io *io)
 		/* save the the time of 1st queue for the next cycle */
 		group->summary.q2q_iter = io->account.time.q;
 		/* do nothing else for the 1st queue */
-		printf("io->account.time.q:%llu group->summary.q2q_iter:%llu\n", io->account.time.q, group->summary.q2q_iter);
 		return;
 	}
 
 	/* obtain the diff between last and this queue */
 	q2q = io->account.time.q - group->summary.q2q_iter;
-	if (io->account.time.q < group->summary.q2q_iter)
-		printf("io->account.time.q:%.6lf group->summary.q2q_iter:%.6lf q2q:%.6lf\n", io->account.time.q / 1000000.0, group->summary.q2q_iter / 1000000.0, q2q / 1000000.0);
 	/* update q2q_iter for the next cycle */
 	group->summary.q2q_iter = io->account.time.q;
 
