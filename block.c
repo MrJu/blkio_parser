@@ -13,9 +13,6 @@
 #include <trace.h>
 #include <block.h>
 
-#define MAX_MATCHES 16
-#define TASK_COMM_LEN 16
-
 /* 
  * block:block_rq_remap
  * block:block_bio_remap
@@ -44,35 +41,6 @@ LIST_HEAD(task_list);
 static int count0 = 0;
 static int count1 = 0;
 static int line_count = 0;
-
-struct pattern {
-	char type;
-	const char *expr;
-	unsigned nr_args;
-	regex_t regex;
-	const char *event;
-	int (*parse) (const char *, struct event *);
-	int (*process)(struct event *);
-	int (*dump) (struct event *);
-};
-
-struct event {
-	struct list_head entry;
-	struct pattern *match;
-	unsigned char type;
-	unsigned int pid;
-	unsigned int cpu;
-	unsigned long long time;
-	unsigned int major;
-	unsigned int minor;
-	char rwbs[8];
-	unsigned long long bytes;
-	unsigned long long sector;
-	unsigned long long nr_sector;
-	char comm[TASK_COMM_LEN];
-	int error;
-	int valid;
-};
 
 struct io {
 	struct list_head entry;
@@ -428,14 +396,6 @@ int process_event_complete(struct event *e)
 	return 0;
 }
 
-int process_event(struct event *e)
-{
-	if (!e->valid)
-		return -EINVAL;
-
-	return e->match->process(e);
-}
-
 /* for events parsed by the same method, regard Q S G M as group Q */
 void dump_event_group_q(struct event *e)
 {
@@ -493,14 +453,6 @@ void dump_event_complete(struct event *e)
 			e->type, e->pid, e->cpu, e->time,
 			e->major, e->minor, e->rwbs,
 			e->sector, e->nr_sector, e->error);
-}
-
-void dump_event(struct event *e)
-{
-	if (!e->valid)
-		return;
-
-	e->match->dump(e);
 }
 
 struct pattern patterns[] = {
@@ -580,85 +532,6 @@ struct pattern patterns[] = {
 		.expr = NULL,
 	},
 };
-
-int parse_event(const char *record, struct event *e)
-{
-	int i, ret = 0;
-	char temp[256];
-	char *name;
-	int count, offset = 0;
-	regmatch_t matches[MAX_MATCHES];
-
-	count0++;
-	for (i = 0; patterns[i].expr; i++) {
-		name = strstr(record, patterns[i].event);
-		if (!name)
-			continue;
-		else {
-			ret = regexec(&patterns[i].regex, record, MAX_MATCHES, matches, 0);
-			if (!ret) {
-				/* matched */
-				e->match = &patterns[i];
-				count1++;
-				break;
-			}
-		}
-	}
-
-	if (!e->match) {
-		// printf("== %s", record);	
-		e->valid = 0;
-		/* not matched but not as error */
-		return 0;
-	}
-
-	for(i = 1, offset = 0; i < e->match->nr_args + 1; i++) {  
-		if (matches[i].rm_so == -1)
-			break;
-		count = sprintf(temp + offset, "%.*s ",
-				matches[i].rm_eo - matches[i].rm_so,
-				record + matches[i].rm_so);  
-		if (count < 0)
-			return -1;
-			/* err handling */;
-		offset += count;
-			// printf("temp: %s\n", temp);
-	}
-
-	// printf("temp: %s\n", temp);
-	
-
-	/* matched by a certain pattern, then parse the evevt */
-	ret = e->match->parse(temp, e);
-
-	dump_event(e);
-
-	return ret;
-}
-
-int regex_init(void)
-{
-	int i, ret;
-
-	for (i = 0; patterns[i].expr; i++) {
-		ret = regcomp(&patterns[i].regex, patterns[i].expr, REG_EXTENDED);
-		if (ret) {
-			fprintf(stderr, "compile regex pattern fail: %d\n", i);
-			return -EINVAL;
-		}
-	}
-
-	return 0;
-}
-
-void regex_free(void)
-{
-	int i;
-
-	for (i = 0; patterns[i].expr; i++) {
-		regfree(&patterns[i].regex);
-	}
-}
 
 int is_marked(struct io *io, char mark)
 {
@@ -1205,7 +1078,7 @@ int main(int argc, char **argv)
 	FILE *f;
 	struct event *e;
 
-	ret = regex_init();
+	ret = regex_init(patterns);
 	if (ret)
 		return ret;
 
@@ -1222,7 +1095,7 @@ int main(int argc, char **argv)
 
 		memset(e, 0, sizeof(*e));
 
-		parse_event(record, e);
+		parse_event(record, patterns, e);
 		ret = process_event(e);
 		if (ret)
 			free(e);
@@ -1234,7 +1107,7 @@ int main(int argc, char **argv)
 
 	fclose(f);
 
-	regex_free();
+	regex_free(patterns);
 
 	return 0;
 }
