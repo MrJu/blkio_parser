@@ -9,15 +9,18 @@
 
 #define EXPR_COMMON ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): "
 
+struct event;
+struct pattern;
+
 struct pattern {
 	const char *expr;
 	regex_t regex;
-	unsigned nr_args;
+	int nr_args;
 	char type;
 	const char *event;
 	int (*parse) (const char *, struct event *);
 	int (*process)(struct event *);
-	int (*dump) (struct event *);
+	void (*dump) (struct event *);
 };
 
 struct event {

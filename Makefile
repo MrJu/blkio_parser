@@ -1,10 +1,10 @@
 CC=gcc
-CFLAGS=-Wall -Wextra -Iinclude
+CFLAGS=-Wall -Wextra -g -Iinclude
 
-all: block
+all: main
 
-block: block.o list_sort.o
-	$(CC) $(CFLAGS) -o block block.o list_sort.o
+main: main.o trace.o list_sort.o block.o
+	$(CC) $(CFLAGS) -o main main.o trace.o list_sort.o block.o
 
 block.o: block.c
 	$(CC) $(CFLAGS) -c block.c
@@ -12,6 +12,12 @@ block.o: block.c
 list_sort.o: list_sort.c
 	$(CC) $(CFLAGS) -c list_sort.c
 
+trace.o: list_sort.c
+	$(CC) $(CFLAGS) -c trace.c
+
+main.o: main.c
+	$(CC) $(CFLAGS) -c main.c
+
 clean:
-	rm -f block block.o list_sort.o
+	rm -f main main.o trace.o list_sort.o block.o
 

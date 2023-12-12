@@ -4,6 +4,23 @@
 #include <errno.h>
 #include <regex.h>
 
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <string.h>
+#include <stdlib.h>
+#include <regex.h>
+#include <errno.h>
+
+#include <list_sort.h>
+#include <list.h>
+#include <trace.h>
+#include <block.h>
+
+
+
 int regex_init(struct pattern *p)
 {
 	int i, ret;

@@ -455,12 +455,13 @@ void dump_event_complete(struct event *e)
 			e->sector, e->nr_sector, e->error);
 }
 
-struct pattern patterns[] = {
+// extern struct pattern patt[];
+struct pattern patt[] = {
 	{
 		.type = 'G',
 		.expr =  EXPR_G,
 		.nr_args= 9,
-		.regex = NULL,
+		.regex = {},
 		.event = "block_getrq",
 		.parse = parse_event_getrq,
 		.process = process_event_getrq,
@@ -470,7 +471,7 @@ struct pattern patterns[] = {
 		.type = 'D',
 		.expr =  EXPR_D,
 		.nr_args = 10,
-		.regex = NULL,
+		.regex = {},
 		.event = "block_rq_issue",
 		.parse = parse_event_issue,
 		.process = process_event_issue,
@@ -480,7 +481,7 @@ struct pattern patterns[] = {
 		.type = 'C',
 		.expr =  EXPR_C,
 		.nr_args = 9,
-		.regex = NULL,
+		.regex = {},
 		.event = "block_rq_complete",
 		.parse = parse_event_complete,
 		.process = process_event_complete,
@@ -491,7 +492,7 @@ struct pattern patterns[] = {
 		.type = 'S',
 		.expr =  EXPR_S,
 		.nr_args = 9,
-		.regex = NULL,
+		.regex = {},
 		.event = "block_split",
 		.parse = parse_event_split,
 		.process = process_event_split,
@@ -501,7 +502,7 @@ struct pattern patterns[] = {
 		.type = 'I',
 		.expr =  EXPR_I,
 		.nr_args = 10,
-		.regex = NULL,
+		.regex = {},
 		.event = "block_rq_insert",
 		.parse = parse_event_insert,
 		.process = process_event_insert,
@@ -511,7 +512,7 @@ struct pattern patterns[] = {
 		.type = 'Q',
 		.expr =  EXPR_Q,
 		.nr_args = 9,
-		.regex = NULL,
+		.regex = {},
 		.event = "block_bio_queue",
 		.parse = parse_event_queue,
 		.process = process_event_queue,
@@ -521,7 +522,7 @@ struct pattern patterns[] = {
 		.type = 'M',
 		.expr =  EXPR_M,
 		.nr_args = 9,
-		.regex = NULL,
+		.regex = {},
 		.event = "block_bio_backmerge",
 		.parse = parse_event_merge,
 		.process = process_event_merge,
@@ -1066,48 +1067,4 @@ void test(void)
 	}
 
 	printf("blocks: %llu size:%llu MB d2c:%llu\n", blocks, blocks * 512 / 1024 / 1024, d2c / d2c_count);
-}
-
-int main(int argc, char **argv)
-{
-	__maybe_unused(argc);
-	__maybe_unused(argv);
-
-	int ret;
-	char record[512];
-	FILE *f;
-	struct event *e;
-
-	ret = regex_init(patterns);
-	if (ret)
-		return ret;
-
-	f = fopen("trace.txt", "r");
-	if (!f) {
-		printf("Error! opening file");
-		return 1;
-	}
-
-	while (fgets(record, sizeof(record), f)) {
-		e = malloc(sizeof(*e));
-		if (!e)
-			return -ENOMEM;
-
-		memset(e, 0, sizeof(*e));
-
-		parse_event(record, patterns, e);
-		ret = process_event(e);
-		if (ret)
-			free(e);
-	}
-
-	// test();
-
-	process_post();
-
-	fclose(f);
-
-	regex_free(patterns);
-
-	return 0;
 }
