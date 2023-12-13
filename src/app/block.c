@@ -94,13 +94,14 @@ int parse_event_group_q(const char *buf, struct event *e)
 {
 	int ret;
 	double time;
+	struct block_event *be = (struct block_event *) e;
 
 	ret = sscanf(buf, "%u %u %lf %u %u %s %llu %llu %s",
-			&e->pid, &e->cpu, &time, &e->major, &e->minor,
-			e->rwbs, &e->sector, &e->nr_sector, e->comm);
+			&e->pid, &e->cpu, &time, &be->major, &be->minor,
+			be->rwbs, &be->sector, &be->nr_sector, be->comm);
 
 	if (ret == e->match->nr_args) {
-		e->type = e->match->type;
+		be->type = e->match->type;
 		e->time = (unsigned long long) (time *1000000);
 		e->valid = 1;
 	} else
@@ -134,13 +135,14 @@ int parse_event_group_i(const char *buf, struct event *e)
 {
 	int ret;
 	double time;
+	struct block_event *be = (struct block_event *) e;
 
 	ret = sscanf(buf, "%u %u %lf %u %u %s %llu %llu %llu %s",
-			&e->pid, &e->cpu, &time, &e->major, &e->minor,
-			e->rwbs, &e->bytes, &e->sector, &e->nr_sector, e->comm);
+			&e->pid, &e->cpu, &time, &be->major, &be->minor,
+			be->rwbs, &be->bytes, &be->sector, &be->nr_sector, be->comm);
 
 	if (ret == e->match->nr_args) {
-		e->type = e->match->type;
+		be->type = e->match->type;
 		e->time = (unsigned long long) (time *1000000);
 		e->valid = 1;
 	} else
@@ -163,13 +165,14 @@ int parse_event_complete(const char *buf, struct event *e)
 {
 	int ret;
 	double time;
+	struct block_event *be = (struct block_event *) e;
 
 	ret = sscanf(buf, "%u %u %lf %u %u %s %llu %llu %d",
-			&e->pid, &e->cpu, &time, &e->major, &e->minor,
-			e->rwbs, &e->sector, &e->nr_sector, &e->error);
+			&e->pid, &e->cpu, &time, &be->major, &be->minor,
+			be->rwbs, &be->sector, &be->nr_sector, &be->error);
 
 	if (ret == e->match->nr_args) {
-		e->type = e->match->type;
+		be->type = e->match->type;
 		e->time = (unsigned long long) (time *1000000);
 		e->valid = 1;
 	} else
@@ -178,12 +181,12 @@ int parse_event_complete(const char *buf, struct event *e)
 	return e->valid;
 }
 
-struct device *search_for_device(struct event *e, struct list_head *head)
+struct device *search_for_device(struct block_event *be, struct list_head *head)
 {
 	struct device *dev;
 	
 	list_for_each_entry(dev, head, entry) {
-		if (dev->major == e->major && dev->minor == e->minor)
+		if (dev->major == be->major && dev->minor == be->minor)
 			return dev;
 	}
 
@@ -195,8 +198,8 @@ struct device *search_for_device(struct event *e, struct list_head *head)
 
 	memset(dev, 0, sizeof(*dev));
 
-	dev->major = e->major;
-	dev->minor = e->minor;
+	dev->major = be->major;
+	dev->minor = be->minor;
 	dev->r.name = "r";
 	dev->w.name = "w";
 	dev->rw.name = "rw";
@@ -208,31 +211,32 @@ struct device *search_for_device(struct event *e, struct list_head *head)
 	return dev;
 }
 
-static struct io *search_for_io(struct event *e, struct list_head *head)
+static struct io *search_for_io(struct block_event *be, struct list_head *head)
 {
 	struct io *io;
 	
 	list_for_each_entry(io, head, entry) {
-		if (io->account.sector == e->sector)
+		if (io->account.sector == be->sector)
 			return io;
 	}
 
 	return NULL;
 }
 
-int is_read(struct event *e)
+int is_read(struct block_event *be)
 {
-	return !!strstr(e->rwbs, "R");
+	return !!strstr(be->rwbs, "R");
 }
 
-int is_write(struct event *e)
+int is_write(struct block_event *be)
 {
-	return !!strstr(e->rwbs, "W");
+	return !!strstr(be->rwbs, "W");
 }
 
 int process_event_queue(struct event *e)
 {
 	struct io *io;
+	struct block_event *be = (struct block_event *) e;
 
 	io = malloc(sizeof(*io));
 	if (!io)
@@ -242,15 +246,15 @@ int process_event_queue(struct event *e)
 	INIT_LIST_HEAD(&io->entry);
 	INIT_LIST_HEAD(&io->event);
 
-	io->account.rw = is_read(e) | (is_write(e) << 1);
-	io->account.mark |= (1 << (e->type - 'A'));
-	io->account.sector = e->sector;
-	io->account.nr_sector_origin = e->nr_sector;
-	io->account.nr_sector = e->nr_sector;
+	io->account.rw = is_read(be) | (is_write(be) << 1);
+	io->account.mark |= (1 << (be->type - 'A'));
+	io->account.sector = be->sector;
+	io->account.nr_sector_origin = be->nr_sector;
+	io->account.nr_sector = be->nr_sector;
 	io->account.time.q = e->time;
 
-	INIT_LIST_HEAD(&e->entry);
-	list_add_tail(&e->entry, &io->event);
+	INIT_LIST_HEAD(&be->entry);
+	list_add_tail(&be->entry, &io->event);
 	list_add_tail(&io->entry, &queue_list);
 
 	return 0;
@@ -259,21 +263,22 @@ int process_event_queue(struct event *e)
 int process_event_split(struct event *e)
 {
 	struct io *origin, *split;
-	struct event *q;
+	struct block_event *q;
+	struct block_event *be = (struct block_event *) e;
 
-	origin = search_for_io(e, &queue_list);
+	origin = search_for_io(be, &queue_list);
 	if (!origin)
 		return -ENOENT;
 
-	q = list_entry(origin->event.next, struct event, entry);
+	q = list_entry(origin->event.next, struct block_event, entry);
 
 	/*
 	 * dd-158     [003] .....   152.372240: block_bio_queue: 254,0 WS 397640 + 3768 [dd]
 	 * dd-158     [003] .....   152.374022: block_split:     254,0 WS 397640 / 400200 [dd]`
 	 * */
-	e->sector = e->nr_sector;
-	e->nr_sector = q->nr_sector - (e->sector - q->sector);
-	q->nr_sector = e->sector - q->sector;
+	be->sector = be->nr_sector;
+	be->nr_sector = q->nr_sector - (be->sector - q->sector);
+	q->nr_sector = be->sector - q->sector;
 	origin->account.nr_sector = q->nr_sector;
 
 	split = malloc(sizeof(*split));
@@ -284,14 +289,14 @@ int process_event_split(struct event *e)
 	INIT_LIST_HEAD(&split->entry);
 	INIT_LIST_HEAD(&split->event);
 
-	split->account.rw = is_read(e) | (is_write(e) << 1);
-	split->account.mark |= (1 << (e->type - 'A'));
-	split->account.sector = e->sector;
-	split->account.nr_sector = e->nr_sector;
+	split->account.rw = is_read(be) | (is_write(be) << 1);
+	split->account.mark |= (1 << (be->type - 'A'));
+	split->account.sector = be->sector;
+	split->account.nr_sector = be->nr_sector;
 	split->account.time.q = e->time;
 
-	INIT_LIST_HEAD(&e->entry);
-	list_add_tail(&e->entry, &split->event);
+	INIT_LIST_HEAD(&be->entry);
+	list_add_tail(&be->entry, &split->event);
 	list_add_tail(&split->entry, &queue_list);
 
 	return 0;
@@ -300,16 +305,17 @@ int process_event_split(struct event *e)
 int process_event_getrq(struct event *e)
 {
 	struct io *io;
+	struct block_event *be = (struct block_event *) e;
 
-	io = search_for_io(e, &queue_list);
+	io = search_for_io(be, &queue_list);
 	if (!io)
 		return -ENOENT;
 
-	io->account.mark |= (1 << (e->type - 'A'));
+	io->account.mark |= (1 << (be->type - 'A'));
 	io->account.time.g = e->time;
 
-	INIT_LIST_HEAD(&e->entry);
-	list_add_tail(&e->entry, &io->event);
+	INIT_LIST_HEAD(&be->entry);
+	list_add_tail(&be->entry, &io->event);
 
 	return 0;
 }
@@ -318,18 +324,19 @@ int process_event_merge(struct event *e)
 {
 	struct io *io;
 	struct device *dev;
+	struct block_event *be = (struct block_event *) e;
 
-	io = search_for_io(e, &queue_list);
+	io = search_for_io(be, &queue_list);
 	if (!io)
 		return -ENOENT;
 
-	io->account.mark |= (1 << (e->type - 'A'));
+	io->account.mark |= (1 << (be->type - 'A'));
 	io->account.time.m = e->time;
 
-	INIT_LIST_HEAD(&e->entry);
-	list_add_tail(&e->entry, &io->event);
+	INIT_LIST_HEAD(&be->entry);
+	list_add_tail(&be->entry, &io->event);
 
-	dev = search_for_device(e, &device_list);
+	dev = search_for_device(be, &device_list);
 	if (!dev)
 		return -ENODEV;
 
@@ -341,16 +348,17 @@ int process_event_merge(struct event *e)
 int process_event_insert(struct event *e)
 {
 	struct io *io;
+	struct block_event *be = (struct block_event *) e;
 
-	io = search_for_io(e, &queue_list);
+	io = search_for_io(be, &queue_list);
 	if (!io)
 		return -ENOENT;
 
-	io->account.mark |= (1 << (e->type - 'A'));
+	io->account.mark |= (1 << (be->type - 'A'));
 	io->account.time.i = e->time;
 
-	INIT_LIST_HEAD(&e->entry);
-	list_add_tail(&e->entry, &io->event);
+	INIT_LIST_HEAD(&be->entry);
+	list_add_tail(&be->entry, &io->event);
 
 	return 0;
 }
@@ -358,16 +366,17 @@ int process_event_insert(struct event *e)
 int process_event_issue(struct event *e)
 {
 	struct io *io;
+	struct block_event *be = (struct block_event *) e;
 
-	io = search_for_io(e, &queue_list);
+	io = search_for_io(be, &queue_list);
 	if (!io)
 		return -ENOENT;
 
-	io->account.mark |= (1 << (e->type - 'A'));
+	io->account.mark |= (1 << (be->type - 'A'));
 	io->account.time.d = e->time;
 
-	INIT_LIST_HEAD(&e->entry);
-	list_add_tail(&e->entry, &io->event);
+	INIT_LIST_HEAD(&be->entry);
+	list_add_tail(&be->entry, &io->event);
 
 	return 0;
 }
@@ -376,18 +385,19 @@ int process_event_complete(struct event *e)
 {
 	struct io *io;
 	struct device *dev;
+	struct block_event *be = (struct block_event *) e;
 
-	io = search_for_io(e, &queue_list);
+	io = search_for_io(be, &queue_list);
 	if (!io)
 		return -ENOENT;
 
-	io->account.mark |= (1 << (e->type - 'A'));
+	io->account.mark |= (1 << (be->type - 'A'));
 	io->account.time.c = e->time;
 
-	INIT_LIST_HEAD(&e->entry);
-	list_add_tail(&e->entry, &io->event);
+	INIT_LIST_HEAD(&be->entry);
+	list_add_tail(&be->entry, &io->event);
 
-	dev = search_for_device(e, &device_list);
+	dev = search_for_device(be, &device_list);
 	if (!dev)
 		return -ENODEV;
 
@@ -399,11 +409,13 @@ int process_event_complete(struct event *e)
 /* for events parsed by the same method, regard Q S G M as group Q */
 void dump_event_group_q(struct event *e)
 {
+	struct block_event *be = (struct block_event *) e;
+
 	printf("%c: pid:%u cpu:%u time:%llu major:%u minor:%u rwbs:%s " \
 			"sector:%llu nr_sector:%llu comm:%s\n",
-			e->type, e->pid, e->cpu, e->time,
-			e->major, e->minor, e->rwbs,
-			e->sector, e->nr_sector, e->comm);
+			be->type, e->pid, e->cpu, e->time,
+			be->major, be->minor, be->rwbs,
+			be->sector, be->nr_sector, be->comm);
 }
 
 void dump_event_queue(struct event *e)
@@ -429,11 +441,13 @@ void dump_event_merge(struct event *e)
 /* for events parsed by the same method, regard I D as group Q */
 void dump_event_group_i(struct event *e)
 {
+	struct block_event *be = (struct block_event *) e;
+
 	printf("%c: pid:%u cpu:%u time:%llu major:%u minor:%u rwbs:%s " \
 			"bytes:%llu sector:%llu nr_sector:%llu comm:%s\n",
-			e->type, e->pid, e->cpu, e->time,
-			e->major, e->minor, e->rwbs, e->bytes,
-			e->sector, e->nr_sector, e->comm);
+			be->type, e->pid, e->cpu, e->time,
+			be->major, be->minor, be->rwbs, be->bytes,
+			be->sector, be->nr_sector, be->comm);
 }
 
 void dump_event_insert(struct event *e)
@@ -448,21 +462,22 @@ void dump_event_issue(struct event *e)
 
 void dump_event_complete(struct event *e)
 {
+	struct block_event *be = (struct block_event *) e;
+
 	printf("%c: pid:%u cpu:%u time:%llu major:%u minor:%u rwbs:%s " \
 			"sector:%llu nr_sector:%llu error:%d\n",
-			e->type, e->pid, e->cpu, e->time,
-			e->major, e->minor, e->rwbs,
-			e->sector, e->nr_sector, e->error);
+			be->type, e->pid, e->cpu, e->time,
+			be->major, be->minor, be->rwbs,
+			be->sector, be->nr_sector, be->error);
 }
 
-// extern struct pattern patt[];
 struct pattern patt[] = {
 	{
 		.type = 'G',
 		.expr =  EXPR_G,
 		.nr_args= 9,
 		.regex = {},
-		.event = "block_getrq",
+		.name = "block_getrq",
 		.parse = parse_event_getrq,
 		.process = process_event_getrq,
 		.dump = dump_event_getrq,
@@ -472,7 +487,7 @@ struct pattern patt[] = {
 		.expr =  EXPR_D,
 		.nr_args = 10,
 		.regex = {},
-		.event = "block_rq_issue",
+		.name = "block_rq_issue",
 		.parse = parse_event_issue,
 		.process = process_event_issue,
 		.dump = dump_event_issue,
@@ -482,7 +497,7 @@ struct pattern patt[] = {
 		.expr =  EXPR_C,
 		.nr_args = 9,
 		.regex = {},
-		.event = "block_rq_complete",
+		.name = "block_rq_complete",
 		.parse = parse_event_complete,
 		.process = process_event_complete,
 		.dump = dump_event_complete,
@@ -493,7 +508,7 @@ struct pattern patt[] = {
 		.expr =  EXPR_S,
 		.nr_args = 9,
 		.regex = {},
-		.event = "block_split",
+		.name = "block_split",
 		.parse = parse_event_split,
 		.process = process_event_split,
 		.dump = dump_event_split,
@@ -503,7 +518,7 @@ struct pattern patt[] = {
 		.expr =  EXPR_I,
 		.nr_args = 10,
 		.regex = {},
-		.event = "block_rq_insert",
+		.name = "block_rq_insert",
 		.parse = parse_event_insert,
 		.process = process_event_insert,
 		.dump = dump_event_insert,
@@ -513,7 +528,7 @@ struct pattern patt[] = {
 		.expr =  EXPR_Q,
 		.nr_args = 9,
 		.regex = {},
-		.event = "block_bio_queue",
+		.name = "block_bio_queue",
 		.parse = parse_event_queue,
 		.process = process_event_queue,
 		.dump = dump_event_queue,
@@ -523,7 +538,7 @@ struct pattern patt[] = {
 		.expr =  EXPR_M,
 		.nr_args = 9,
 		.regex = {},
-		.event = "block_bio_backmerge",
+		.name = "block_bio_backmerge",
 		.parse = parse_event_merge,
 		.process = process_event_merge,
 		.dump = dump_event_merge,
@@ -1042,7 +1057,7 @@ void test(void)
 	unsigned long long d2c = 0;
 	int d2c_count = 0;
 	unsigned long long blocks = 0;
-	struct event *e;
+	struct block_event *be;
 	struct io *io;
 	struct device *dev;
 
@@ -1051,9 +1066,9 @@ void test(void)
 
 	list_for_each_entry(dev, &device_list, entry) {
 		list_for_each_entry(io, &dev->io, entry) {
-			e = list_entry(io->event.next, struct event, entry);
-			printf("%c: cpu:%d time:%llu\n", e->type, e->cpu, e->time);
-			blocks += e->nr_sector;
+			be = list_entry(io->event.next, struct block_event, entry);
+			printf("%c: cpu:%d time:%llu\n", be->type, be->e.cpu, be->e.time);
+			blocks += be->nr_sector;
 		}
 	}
 
@@ -1068,3 +1083,46 @@ void test(void)
 
 	printf("blocks: %llu size:%llu MB d2c:%llu\n", blocks, blocks * 512 / 1024 / 1024, d2c / d2c_count);
 }
+
+int __stub(int argc, char **argv)
+{
+	int ret;
+	char record[512];
+	FILE *f;
+	struct block_event *be;
+
+	ret = regex_init(patt);
+	if (ret)
+		return ret;
+
+	f = fopen("trace.txt", "r");
+	if (!f) {
+		printf("Error! opening file");
+		return 1;
+	}
+
+	while (fgets(record, sizeof(record), f)) {
+		be = malloc(sizeof(*be));
+		if (!be)
+			return -ENOMEM;
+
+		memset(be, 0, sizeof(*be));
+
+		parse_event(record, patt, &be->e);
+		ret = process_event(&be->e);
+		if (ret)
+			free(be);
+	}
+
+	// test();
+
+	process_post();
+
+	fclose(f);
+
+	regex_free(patt);
+
+	return 0;
+}
+
+_init_t _func1 __section = {__stub, "func1"};

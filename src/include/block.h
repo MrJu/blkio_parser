@@ -24,4 +24,19 @@
 #define __EXPR_M "block_bio_backmerge: ([0-9]+),([0-9]+) (\\w+) ([0-9]+) \\+ ([0-9]+) \\[(.+)\\]"
 #define EXPR_M (EXPR_COMMON __EXPR_M)
 
+struct block_event {
+	/* struct event *MUST* be the first member */
+	struct event e;
+	struct list_head entry;
+	unsigned char type;
+	unsigned int major;
+	unsigned int minor;
+	char rwbs[8];
+	unsigned long long bytes;
+	unsigned long long sector;
+	unsigned long long nr_sector;
+	char comm[TASK_COMM_LEN];
+	int error;
+};
+
 #endif /* __PATTERN_H */

@@ -54,7 +54,7 @@ int parse_event(const char *record, struct pattern *p, struct event *e)
 	regmatch_t matches[MAX_MATCHES];
 
 	for (i = 0; p[i].expr; i++) {
-		name = strstr(record, p[i].event);
+		name = strstr(record, p[i].name);
 		if (!name)
 			continue;
 		else {

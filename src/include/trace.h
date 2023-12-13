@@ -19,31 +19,21 @@ typedef struct init_t {
 }_init_t;
  
 struct pattern {
+	const char *name;
 	const char *expr;
 	regex_t regex;
 	int nr_args;
 	char type;
-	const char *event;
 	int (*parse) (const char *, struct event *);
 	int (*process)(struct event *);
 	void (*dump) (struct event *);
 };
 
 struct event {
-	struct list_head entry;
 	struct pattern *match;
-	unsigned char type;
 	unsigned int pid;
 	unsigned int cpu;
 	unsigned long long time;
-	unsigned int major;
-	unsigned int minor;
-	char rwbs[8];
-	unsigned long long bytes;
-	unsigned long long sector;
-	unsigned long long nr_sector;
-	char comm[TASK_COMM_LEN];
-	int error;
 	int valid;
 };
 
