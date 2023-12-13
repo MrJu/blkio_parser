@@ -87,7 +87,7 @@ int parse_event(const char *record, struct pattern *p, struct event *e)
 	/* matched by a certain pattern, then parse the evevt */
 	ret = e->match->parse(temp, e);
 
-	dump_event(e);
+	// dump_event(e);
 
 	return ret;
 }

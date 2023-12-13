@@ -12,7 +12,6 @@ int main(int argc, char **argv)
         _init_t *p;
 
         for(p = &__app_init_start__; p < &__app_init_end__; p++){
-                printf("==%s\n", p->name);
                 p->func(argc, argv);
         }
 

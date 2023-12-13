@@ -9,6 +9,8 @@
 
 #define EXPR_COMMON ".+-([0-9]+) +\\[([0-9]{3})\\].+ ([0-9]+\\.[0-9]{6}): "
 #define __section __attribute((section(".app_init_sec")))
+#define INSTALL_APP(entry, name) \
+	_init_t name __section = {entry, #name}
 
 struct event;
 struct pattern;
