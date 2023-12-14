@@ -869,9 +869,9 @@ void process_post(void)
 		);
 
 		printf("\n======================================= Time Span ========================================\n");
-		printf("DEV       Group     X2X           Max         Avg         Min         Acc        Nr        \n");
+		printf("DEV       Group     X2X           Max         Avg         Min         Acc      Nr        \n");
 		/*    major, minor  rw    X2X   Max      Avg      Min      Acc      Nr        */
-		printf("%-3d, %-3d  %-8s  %-12s  %-10.6lf  %-10.6lf  %-10.6lf  %-10.6lf %-8llu  \n",
+		printf("%-3d, %-3d  %-8s  %-10s  %10.6lf  %10.6lf  %10.6lf  %10.6lf %-8llu  \n",
 				DEV(dev),
 				"rw",
 				"Q2Q",
@@ -882,7 +882,7 @@ void process_post(void)
 				X(dev, rw, nr_q2q)
 		);
 
-		printf("%-3d, %-3d  %-8s  %-12s  %-10.6lf  %-10.6lf  %-10.6lf  %-10.6lf %-8llu  \n",
+		printf("%-3d, %-3d  %-8s  %-10s  %10.6lf  %10.6lf  %10.6lf  %10.6lf %-8llu  \n",
 				DEV(dev),
 				"rw",
 				"Q2G",
@@ -893,7 +893,7 @@ void process_post(void)
 				X(dev, rw, nr_q2g)
 		);
 
-		printf("%-3d, %-3d  %-8s  %-12s  %-10.6lf  %-10.6lf  %-10.6lf  %-10.6lf %-8llu  \n",
+		printf("%-3d, %-3d  %-8s  %-10s  %10.6lf  %10.6lf  %10.6lf  %10.6lf %-8llu  \n",
 				DEV(dev),
 				"rw",
 				"Q2C",
@@ -904,7 +904,7 @@ void process_post(void)
 				X(dev, rw, nr_q2c)
 		);
 
-		printf("%-3d, %-3d  %-8s  %-12s  %-10.6lf  %-10.6lf  %-10.6lf  %-10.6lf %-8llu  \n",
+		printf("%-3d, %-3d  %-8s  %-10s  %10.6lf  %10.6lf  %10.6lf  %10.6lf %-8llu  \n",
 				DEV(dev),
 				"rw",
 				"D2C",
@@ -915,7 +915,7 @@ void process_post(void)
 				X(dev, rw, nr_d2c)
 		);
 
-		printf("%-3d, %-3d  %-8s  %-12s  %-10.6lf  %-10.6lf  %-10.6lf  %-10.6lf %-8llu  \n",
+		printf("%-3d, %-3d  %-8s  %-10s  %10.6lf  %10.6lf  %10.6lf  %10.6lf %-8llu  \n",
 				DEV(dev),
 				"rw",
 				"Q2Q_origin",
@@ -971,9 +971,9 @@ int __stub(int argc, char **argv)
 	if (ret)
 		return ret;
 
-	f = fopen("trace.txt", "r");
+	f = fopen(argv[2], "r");
 	if (!f) {
-		printf("Error! opening file");
+		printf("Error! opening file\n");
 		return 1;
 	}
 
